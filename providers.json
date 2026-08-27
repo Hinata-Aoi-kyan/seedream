@@ -1,0 +1,26 @@
+{
+  "byteplus": {
+    "label": "BytePlus / 火山方舟",
+    "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+    "image_models": [
+      { "id": "dola-seedream-5-0-pro-260628", "label": "Seedream 5.0 Pro" },
+      { "id": "seedream-5-0", "label": "Seedream 5.0 Lite" }
+    ],
+    "chat_models": [
+      { "id": "dola-seed-2-1-turbo", "label": "Seed 2.1 Turbo (视觉·优化)" },
+      { "id": "deepseek-v4-flash", "label": "DeepSeek V4" },
+      { "id": "deepseek-v3-0324", "label": "DeepSeek V3" }
+    ]
+  },
+  "openai": {
+    "label": "OpenAI / jojocode 中转",
+    "base_url": "https://api2.jojocode.com/v1",
+    "image_models": [
+      { "id": "gpt-image-2", "label": "gpt-image-2" },
+      { "id": "gpt-image-2-4k", "label": "gpt-image-2-4k" }
+    ],
+    "chat_models": [
+      { "id": "gpt-4o", "label": "GPT-4o" }
+    ]
+  }
+}

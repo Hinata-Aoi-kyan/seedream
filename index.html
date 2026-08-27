@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Seedream Web</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0f1115">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root[data-theme="dark"]{
+    --bg:#0f1115;--card:#1a1d24;--card2:#22262f;--line:#2c313b;
+    --txt:#e8ebf0;--mut:#9aa3b2;--acc:#4c8dff;--acc2:#6ee7b7;--bad:#ff6b6b;--deep:#141720;
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f5f8;--card:#ffffff;--card2:#f0f1f5;--line:#dde1e8;
+    --txt:#1b1f27;--mut:#6a7280;--acc:#2563eb;--acc2:#0d9488;--bad:#dc2626;--deep:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--txt);-webkit-tap-highlight-color:transparent;
+       transition:background .25s,color .25s}
+  .app{display:flex;flex-direction:column;min-height:100vh}
+  header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);
+         backdrop-filter:blur(8px);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+  header h1{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
+  header h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--acc2);display:inline-block}
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;
+        border:1px solid var(--line);background:var(--card);color:var(--txt);border-radius:10px;cursor:pointer}
+  .icon-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  main{flex:1;padding:12px 14px calc(84px + env(safe-area-inset-bottom));}
+  .page{display:none}
+  .page.active{display:block}
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--txt);padding:11px 14px;
+       border-radius:10px;font-size:14px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+  .btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .btn:hover{border-color:var(--acc)}
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+  .btn.small{padding:7px 10px;font-size:12px}
+  .btn.ghost{border-color:transparent;background:transparent;color:var(--bad);padding:2px}
+  .btn.ghost svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .btn:disabled{opacity:.55;cursor:not-allowed;pointer-events:none}
+  .btn:disabled .spin{border-top-color:var(--acc)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px}
+  label{display:block;font-size:12px;color:var(--mut);margin:10px 0 6px}
+  input[type=text],input[type=password],textarea,select{width:100%;background:var(--card2);color:var(--txt);
+       border:1px solid var(--line);border-radius:10px;padding:11px;font-size:15px;font-family:inherit}
+  textarea{min-height:88px;resize:vertical}
+  textarea::-webkit-resizer{background:transparent}
+  textarea{scrollbar-width:thin}
+  /* textarea 右下角拖拽手柄(简洁、可拖) */
+  .ta-wrap{position:relative;display:block}
+  .ta-wrap textarea{display:block;resize:vertical}
+  .ta-grip{position:absolute;right:3px;bottom:3px;width:16px;height:16px;
+        display:block;cursor:ns-resize;opacity:.35;transition:.15s;pointer-events:none;
+        background:
+          linear-gradient(135deg, transparent 50%, var(--line) 50%) 100% 100%/7px 7px no-repeat,
+          linear-gradient(135deg, transparent 50%, var(--line) 50%) 100% 100%/11px 11px no-repeat;
+        }
+  .ta-wrap:hover .ta-grip{opacity:.8}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row > *{flex:1;min-width:140px}
+  .toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0}
+  .opt-sub{font-size:11px;color:var(--mut);line-height:1.35;margin-top:2px}
+  .switch{position:relative;width:50px;height:28px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:var(--line);border-radius:20px;cursor:pointer;transition:.2s}
+  .slider:before{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .switch input:checked + .slider{background:var(--acc2)}
+  .switch input:checked + .slider:before{transform:translateX(22px)}
+  .refs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .ref{position:relative;width:74px;height:74px;border-radius:10px;overflow:hidden;border:1px solid var(--line);
+       user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
+  .ref img{width:100%;height:100%;object-fit:cover;cursor:pointer;pointer-events:none}
+  .ref .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;
+        width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:15px;padding:0;line-height:1;
+        display:flex;align-items:center;justify-content:center}
+  .ref .del:hover{background:rgba(0,0,0,.85)}
+  .ref .idx{position:absolute;left:2px;bottom:2px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;padding:1px 5px;border-radius:6px}
+  .ref{display:flex;flex-direction:column;width:96px;height:auto;border:1px solid var(--line);border-radius:8px;padding:4px}
+  .ref .thumb{position:relative;width:100%;height:88px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:var(--card2)}
+  .ref .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .ref .thumb .idx{position:absolute;left:3px;bottom:3px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:1px 5px;border-radius:6px}
+  .ref .thumb .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:15px;padding:0;line-height:1;display:flex;align-items:center;justify-content:center}
+  .ref select.refrole{margin-top:4px;width:100%;font-size:11px;padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--card2);color:var(--txt)}
+
+  .ref.add{border-style:dashed;background:transparent}
+  .drag-ghost{opacity:.4;transform:scale(.94)}
+  #refs .ref{transition:transform .18s ease}
+  .canvas{min-height:64px;border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;
+        justify-content:center;color:var(--mut);font-size:13px;cursor:pointer;padding:12px;gap:8px}
+  .canvas svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .canvas:hover{border-color:var(--acc)}
+  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px}
+  .res{border-radius:12px;overflow:hidden;border:1px solid var(--line);position:relative;background:#000}
+  .res img{width:100%;display:block;cursor:zoom-in}
+  .res a{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;
+        background:var(--card2);color:var(--acc2);text-decoration:none;font-size:13px;font-weight:500;
+        border-top:1px solid var(--line)}
+  .res a:hover{background:var(--card)}
+  .res a svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .hist{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+  .hitem{border:1px solid var(--line);border-radius:10px;overflow:hidden;position:relative;background:#000;cursor:pointer}
+  .hitem img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block}
+  .hitem .meta{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;gap:4px;padding:5px 6px;background:rgba(0,0,0,.55)}
+  .hitem .meta span{font-size:10px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .hitem .meta small{font-size:11px;color:var(--acc2);flex:none}
+  .hitem .meta .btn.ghost{color:#fff}
+  details{border:1px solid var(--line);border-radius:10px;padding:0 10px;margin-top:10px;background:var(--card2)}
+  details summary{cursor:pointer;padding:10px 0;font-size:13px;color:var(--mut);list-style:none;display:flex;align-items:center;gap:6px}
+  details summary::-webkit-details-marker{display:none}
+  details summary::before{content:"";width:8px;height:8px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(-45deg);margin-right:4px;transition:.2s}
+  details[open] summary::before{transform:rotate(45deg)}
+  /* 底部导航 */
+  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;background:color-mix(in srgb,var(--bg) 94%,transparent);
+        backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 0 calc(6px + env(safe-area-inset-bottom))}
+  .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;
+        color:var(--mut);font-size:11px;cursor:pointer;padding:6px 0}
+  .tabbar button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .tabbar button.active{color:var(--acc)}
+  /* 设置页 provider 列表(二级) */
+  .pcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px;position:relative}
+  .provlist-top{display:flex;gap:8px;margin-bottom:12px}
+  .provlist-top input{flex:1;margin:0}
+  .provlist-top .btn{flex:none;min-height:44px}
+  .provrow{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;cursor:pointer}
+  .provrow:hover{border-color:var(--acc)}
+  .prov-avatar{width:46px;height:46px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--acc);flex:none}
+  .prov-info{flex:1;min-width:0}
+  .prov-name{font-size:16px;font-weight:600;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prov-badges{display:flex;gap:6px;margin-top:5px}
+  .prov-badges .badge{font-size:11px;color:var(--mut);background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:2px 8px}
+  .prov-badges .badge.on{color:var(--acc2);background:color-mix(in srgb,var(--acc2) 12%,var(--card2))}
+  .prov-menu{background:none;border:none;color:var(--mut);font-size:20px;cursor:pointer;width:34px;height:34px;flex:none;line-height:1}
+  .prov-menu:hover{color:var(--bad)}
+  /* 下拉提示灰 + 对齐(与输入框同款: 同背景/内边距/高度) */
+  .addbar select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--card2);font-size:15px;padding:11px;color:var(--txt)}
+  .addbar select.sel-hint{color:var(--mut)}
+  .addbar select.sel-hint.filled{color:var(--txt)}
+  .addbar .btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  .addbar.stretch{align-items:stretch}
+  .addbar.stretch select,.addbar.stretch .btn{height:auto;align-self:stretch}
+  /* ⋮ 菜单 */
+  .provmenu{position:fixed;z-index:120;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;min-width:150px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+  .provmenu div{padding:13px 18px;font-size:15px;cursor:pointer;border-radius:8px;color:var(--txt);margin:2px 0}
+  .provmenu div:hover{background:var(--card2)}
+  .provmenu div.danger{color:var(--bad)}
+  .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+  .phead b{font-size:16px}
+  .mlist{display:flex;flex-direction:column;gap:8px}
+  .mrow{display:flex;gap:8px;align-items:center}
+  .mrow input{flex:1}
+  .mrow input.mid{flex:2}
+  .mrow .del{width:32px;height:32px;flex:none}
+  .det{margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:10px}
+  .addbar{display:flex;gap:8px;margin-top:10px;align-items:center}
+  .small-note{font-size:11px;color:var(--mut);margin-top:6px}
+  .toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:var(--card2);
+        border:1px solid var(--line);padding:11px 18px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .toast.show{opacity:1}
+  .hide{display:none !important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1><span class="dot"></span>Seedream</h1>
+    <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="切换主题"></button>
+  </header>
+
+  <main>
+    <!-- 生成页 -->
+    <section id="page-generate" class="page active">
+      <div class="card">
+        <div class="row">
+          <div><label>服务方</label><select id="provider" onchange="onProviderChange()"></select></div>
+          <div><label>生图模型</label><select id="imageModel" onchange="onImageModelChange()"></select></div>
+        </div>
+        <div id="modelOptions"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <label style="margin:0;font-size:13px;color:var(--txt)">提示词</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn small" id="undoOptBtn" style="display:none" onclick="toggleVersion()">↩ 退回原输入</button>
+            <button class="btn small" onclick="clearDraftUI()">清空</button>
+          </div>
+        </div>
+        <div class="ta-wrap"><textarea id="prompt" placeholder="描述你想生成的画面…" style="margin-top:6px"></textarea><span class="ta-grip"></span></div>
+        <div id="imgDescWrap" class="hide">
+          <label>参考图特征描述（中文，可编辑）</label>
+          <div class="ta-wrap"><textarea id="imgDesc" style="min-height:90px"></textarea><span class="ta-grip"></span></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="optBtn" onclick="optimizePrompt()">优化提示词</button>
+          <button class="btn primary" onclick="generate()">生成图片</button>
+        </div>
+        <div id="optResult" class="small-note"></div>
+        <div class="toggle" style="margin-top:8px">
+          <div style="flex:1">
+            <div style="font-size:13px">干净渲染</div>
+            <div class="opt-sub">抑制碎影/色斑/串色/噪点</div>
+            <div class="opt-sub">自动追加干净渲染约束、去噪预处理</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="cleanRender" checked><span class="slider"></span></label>
+        </div>
+        <details id="optSettings">
+          <summary>提示词优化设置</summary>
+          <div id="chatWrap" style="padding-bottom:10px">
+            <label>优化文本模型</label>
+            <select id="chatModel"></select>
+            <div class="row" style="margin-top:8px">
+              <div><label>优化流程</label>
+                <select id="optFlow"><option value="one" selected>一段式（合并优化）</option><option value="two">两段式（先提取图片特征）</option></select></div>
+            </div>
+            <div class="toggle" style="margin-top:8px">
+              <div style="font-size:13px">识别参考图并按图优化（需视觉模型）</div>
+              <label class="switch"><input type="checkbox" id="useVision" checked><span class="slider"></span></label>
+            </div>
+            <label>优化系统提示词（可编辑）</label>
+            <textarea id="optPrompt" style="min-height:100px"></textarea>
+            <div style="text-align:right;min-height:16px;margin-top:4px">
+              <span id="optSaveState" style="font-size:12px;color:var(--acc2);opacity:0;transition:opacity .2s">已保存</span>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <label>参考图（最多 10 张，拖拽可排序，顺序即 #1 #2 …）</label>
+        <input type="file" id="fileInput" accept="image/*" multiple class="hide">
+        <div class="refs" id="refs"></div>
+        <div class="toggle" style="margin-top:6px">
+          <div style="flex:1">
+            <div style="font-size:13px">参考图二次压缩</div>
+            <div class="opt-sub">Seedream 建议开，GPT 建议关</div>
+            <div class="opt-sub">开启后图更小更快，关闭保留细节</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="compress" checked><span class="slider"></span></label>
+        </div>
+        <div class="addbar" style="margin-top:8px;align-items:stretch">
+          <input type="text" id="refUrl" placeholder="粘贴图片 URL 添加为参考图" style="flex:1;margin:0">
+          <button class="btn" style="flex:none;padding:0 18px;display:inline-flex;align-items:center" onclick="addRefUrl()">添加</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <label>生成结果</label>
+        <div class="results" id="results"><div class="small-note">尚未生成</div></div>
+      </div>
+    </section>
+
+    <!-- 设置页 -->
+    <section id="page-settings" class="page">
+      <div id="provEditor"></div>
+    </section>
+
+    <!-- 记录页 -->
+    <section id="page-history" class="page">
+      <div class="card">
+        <label style="margin:0 0 8px;font-size:14px;color:var(--txt);white-space:nowrap">生成记录</label>
+        <select id="histFilter" onchange="histModelFilter=this.value;renderHistory()"
+          style="width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13px;color:var(--txt);margin-bottom:10px">
+          <option value="">全部模型</option>
+        </select>
+        <div class="hist" id="history"><div class="small-note">暂无记录</div></div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab active" data-tab="generate" onclick="switchTab('generate')">
+      <svg viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>生成
+    </button>
+    <button class="tab" data-tab="history" onclick="switchTab('history')">
+      <svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6l-2.5 2.5"/><path d="M3.5 8.5V4.5M3.5 8.5h4"/><path d="M12 7.5v4.5l3 1.8"/></svg>记录
+    </button>
+    <button class="tab" data-tab="settings" onclick="switchTab('settings')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>设置
+    </button>
+  </nav>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/Sortable.min.js"></script>
+<script>
+/* ---------- 图标 ---------- */
+const ICONS = {
+  theme:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
+  history:'<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6l-2.5 2.5"/><path d="M3.5 8.5V4.5M3.5 8.5h4"/><path d="M12 7.5v4.5l3 1.8"/></svg>',
+  search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
+  plus:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  trash:'<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
+  dl:'<svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
+  x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>'
+};
+function icon(name){ return ICONS[name] || ''; }
+const DEFAULT_OPTPROMPT_TEXT = '你是一个专业的AI绘画提示词工程师。请把用户的中文/英文需求扩展成一段高质量、结构化、以英文为主的图像生成提示词, 依次包含: 主体、场景/背景、构图视角、光影色调、风格、画质细节。只输出优化后的提示词本身, 不要解释, 不要多余的说明文字。';
+const OPT_PROMPT_GPTIMAGE = `你是一位世界顶级的 AI 图像生成专家与材质逆向工程大师，也是图像理解、创意改写与干净渲染工程师。你要把用户的意图、参考图素材，提炼并组织成一份 gpt-image 能直接生成"干净、统一、无噪点、无碎影、无假纹理"画面的英文提示词。
+
+【设计原则：用"正向怎么画"传达干净】
+不要只堆负面词。要优先用积极的画面语言描述"应该怎么画"，来实现干净效果：连续清晰的线稿，平滑均匀的渐变，受控的平面色块，干净的轮廓与剪影，克制的纹理，细节清楚易读；头发缝隙和细小饰品保持自然通透。负面约束保持短而具体，不与主目标冲突。
+
+工作方式：
+1. 先理解用户需求：看清用户想要的效果、主体、风格、场景、氛围、材质、透明背景、文字排版等，抓住核心目标。
+2. 若用户上传参考图：先做"全场景结构解析"，提取图像类别、主体结构（骨架/姿态/形状/轮廓/特殊结构）、场景与空间（背景、前景遮挡、所处环境），只还原其"本应该是"的完美物理状态。
+3. 参考图职责：区分"身份证据 / 风格证据 / 服装证据"。保持参考图中的脸型、发型、瞳色、体型比例、主要服装结构与永久身份特征；不同角色的身份/脸部/发型/瞳色/服装不要互相混合。参考图不复制原图构图、裁切、姿势、背景或大块色彩布局，除非用户明确要求复现。
+4. 生成提示词：把用户意图与提取信息融合，写成 gpt-image 友好的结构化英文提示词。按短标签分段、换行：画面主体与特征、场景背景、材质与质感、风格媒介、光线氛围、构图视角、视角景别。多参考图时用 "Image 1: ...，Image 2: ...，use Image 1 as X, Image 2 as Y" 说明每张图作用与交互。
+5. 智能补全与纠偏：用户描述含糊时适度补充能提升画面质量的合理细节；意图与参考图冲突时以用户明确的优先级为准并说明处理。
+
+【必须包含到最终提示词的约束】
+- 画面质量（正向）：同样适用于 2D 动漫/二次元角色卡与写实两种场景——连续清晰的线稿，轮廓明确，色块均匀，渐变平滑，材质纹理克制，边缘干净，细小饰品和头发缝隙保持自然通透，画面干净、统一、有质感。
+- 伪影抑制：避免随机色点、彩色色斑、脏污纹理、局部碎影、边缘串色、不必要的颗粒噪声、模糊轮廓、重复肢体、错误手指、额外人物、文字、Logo、水印和压缩伪影。
+- 若为人物/产品/场景，加入"局部重新生成"强制指令：不考虑参考图原有杂质纹路，按提示词重新生成没有明显瑕疵、具有真实物理肌理的主体；生成内容必须与原图色彩视觉完全一致，保证光影、透视无缝融合，不额外增加内容。
+- 产品/精细化工：严格还原真实颜色与材质质感，无杂质无噪点，清除指纹、灰尘、划痕与瑕疵，光线均匀柔和，高光自然通透，立体感强（有产品/人物/场景时必须加上）。
+- 画面干净约束（若偏写实）：photorealistic 时用 ULTRA CLEAN, UNIFIED render；no high-frequency noise, no grain, no speckles, no fake fine details or fake skin pores/weave, no blurred or smudged hair roots, no patchy/mottled/blotchy colors, no banding, no compression/JPEG artifacts, no over-sharpening, no halos, no watermark, no extra text。
+
+只输出优化后的英文提示词本身（可含中文关键词对照），不要解释、不要多余说明、不要输出其它内容。`;
+
+/* ---------- 主题 ---------- */
+let THEME = localStorage.getItem('sw_theme') || 'dark';
+function applyTheme(){ document.documentElement.setAttribute('data-theme',THEME);
+  document.getElementById('themeBtn').innerHTML = icon(THEME==='dark'?'theme':'theme'); }
+function toggleTheme(){ THEME = THEME==='dark'?'light':'dark'; localStorage.setItem('sw_theme',THEME); applyTheme(); }
+
+/* ---------- 工具 ---------- */
+const $ = id => document.getElementById(id);
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function startElapsed(){ const el=document.getElementById('ela'); if(!el) return ()=>{};
+  const t0=Date.now(); el.textContent=' · 已用时 0 秒';
+  const iv=setInterval(()=>{ if(!document.body.contains(el)){ clearInterval(iv); return; }
+    el.textContent=' · 已用时 '+Math.round((Date.now()-t0)/1000)+' 秒'; },1000);
+  return ()=>clearInterval(iv); }
+function scrollToResults(){ const r=$('results'); if(r) r.scrollIntoView({behavior:'smooth',block:'center'}); }
+let _gTimer=null, _g0=0, _gEl=null;
+function genTimerStart(){ _g0=Date.now(); clearInterval(_gTimer);
+  _gTimer=setInterval(()=>{ if(_gEl && document.body.contains(_gEl)) _gEl.textContent=' · 已用时 '+Math.round((Date.now()-_g0)/1000)+' 秒'; else clearInterval(_gTimer); },1000); }
+function genTimerStop(){ clearInterval(_gTimer); _gTimer=null; }
+function genShow(msg){
+  const box=$('results');
+  box.innerHTML='<div style="grid-column:1 / -1;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)">'
+    +'<span class="spin"></span><span style="flex:1;white-space:nowrap">'+esc(msg)+'</span>'
+    +'<span id="ela" style="flex:none;white-space:nowrap;color:var(--acc);font-variant-numeric:tabular-nums"> · 已用时 0 秒</span></div>';
+  scrollToResults(); _gEl=document.getElementById('ela');
+  if(_gEl) _gEl.textContent=' · 已用时 '+Math.round((Date.now()-_g0)/1000)+' 秒'; }
+function requestNotif(){ try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){} }
+function notifyBrowser(title, body){ try{ if('Notification' in window && Notification.permission==='granted') new Notification(title,{body:body||'',icon:'/static/icon-192.png'}); }catch(e){} }
+async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+async function jpost(u,b,t){ return jreq('POST',u,b,t); }
+async function jput(u,b){ return jreq('PUT',u,b); }
+async function jreq(m,u,b,timeout){
+  const limit=(timeout && timeout>0)?timeout:300000;
+  const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(), limit);
+  try{ const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b),signal:ctl.signal});
+    const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.detail||JSON.stringify(d)); return d; }
+  catch(e){ if(e && e.name==='AbortError') throw new Error('请求超时（超过 '+Math.round(limit/1000)+' 秒）。任务可能仍在后端进行，请在「记录」里查看。'); throw e; }
+  finally{ clearTimeout(timer); } }
+
+let MODELS={}, CONFIG={}, refs=[], currentHistory=[];
+let _det={}; let keyDraft={};
+
+/* ---- 草稿缓存 ---- */
+function saveDraft(){ try{ localStorage.setItem('sw_draft_prompt',$('prompt').value||''); localStorage.setItem('sw_draft_refs',JSON.stringify(refs.slice(0,10))); }catch(e){} }
+function saveDraftDebounced(){ clearTimeout(window._draftT); window._draftT=setTimeout(saveDraft,400); }
+function restoreDraft(){ try{ const p=localStorage.getItem('sw_draft_prompt'); if(p!=null) $('prompt').value=p;
+  const r=localStorage.getItem('sw_draft_refs'); if(r){ const a=JSON.parse(r)||[]; refs=a.map(x=> typeof x==='string' ? {url:x,role:'auto'} : x).filter(x=>x.url && String(x.url).indexOf('data:image/')===0); if(refs.length) renderRefs(); } }catch(e){} }
+function clearDraft(){ try{ localStorage.removeItem('sw_draft_prompt'); localStorage.removeItem('sw_draft_refs'); }catch(e){} }
+
+/* ---------- 页面切换 ---------- */
+function switchTab(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+name));
+  document.querySelectorAll('.tabbar .tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  if(name==='settings') renderSettings();
+  if(name==='history') loadHistory();
+  if(name==='generate'){ buildChatOptions(); }
+}
+
+/* ---------- 初始化 ---------- */
+async function init(){
+  applyTheme(); requestNotif();
+  MODELS = await jget('/api/models'); CONFIG = await jget('/api/config');
+  fillProviders(); onProviderChange(); buildChatOptions(); setupOptPrompt();
+  restoreDraft(); renderRefs(); loadHistory();
+  $('prompt').addEventListener('input', saveDraftDebounced);
+  if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('/sw.js'); }catch(e){} }
+  document.getElementById('optSettings').addEventListener('toggle', ()=>{ if(document.getElementById('optSettings').open) buildChatOptions(); });
+  if(location.hash==='#history') switchTab('history');
+}
+function fillProviders(){ const p=$('provider'); p.innerHTML='';
+  Object.keys(MODELS).filter(k=>CONFIG[k]?CONFIG[k].enabled!==false:true).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=MODELS[k].label||k; p.appendChild(o); });
+  if(!$('provider').value && p.options.length) p.value=p.options[0].value; }
+function onProviderChange(){ const p=$('provider').value, conf=MODELS[p]||{}; if(typeof refreshOptPromptForModel==='function') refreshOptPromptForModel();
+  const im=$('imageModel'); im.innerHTML='';
+  (conf.image_models||[]).forEach(m=>{ const o=document.createElement('option'); o.value=m.id; o.textContent=m.label||m.id; im.appendChild(o); });
+  renderModelOptions(); }
+function onImageModelChange(){ renderModelOptions(); if(typeof refreshOptPromptForModel==='function') refreshOptPromptForModel(); }
+function curProvider(){ return ($('provider')&&$('provider').value)||''; }
+function isGPTProvider(){ var p=curProvider(); return (MODELS[p] && /openai|gpt|gpt-image|jojocode|兼容/i.test((MODELS[p].label||'')+p)); }
+function isGPTSel(){ return isGPTProvider(); }
+function chatModelValue(){ let v=$('chatModel').value; if(!v){ const f=[...$('chatModel').options].find(o=>o.value); if(f) v=f.value; } return v; }
+function buildChatOptions(){
+  const cm=$('chatModel'); cm.innerHTML='';
+  const ph=document.createElement('option'); ph.value=''; ph.textContent='请选择优化模型'; ph.disabled=true; ph.selected=true;
+  cm.appendChild(ph);
+  let count=0;
+  Object.keys(MODELS).forEach(p=>{
+    const arr=MODELS[p].chat_models||[]; if(!arr.length) return;
+    const lp=MODELS[p].label||p;
+    const grp=document.createElement('option'); grp.value=''; grp.textContent='— '+lp+' —'; grp.disabled=true; cm.appendChild(grp);
+    arr.forEach(m=>{ const o=document.createElement('option'); o.value=p+'::'+m.id; o.textContent=m.label||m.id; cm.appendChild(o); count++; });
+  });
+  if(!count){ const none=document.createElement('option'); none.value=''; none.textContent='（暂无文本模型，请到「设置」里添加）'; none.disabled=true; cm.appendChild(none); }
+  const pre=localStorage.getItem('sw_chat');
+  let target = (pre && [...cm.options].some(o=>o.value===pre)) ? pre : null;
+  if(!target){ const bp=[...cm.options].find(o=>o.value.startsWith('byteplus::')); target=bp?bp.value:(([...cm.options].find(o=>o.value)||{}).value||''); }
+  if(target) cm.value=target;
+}
+function optDefaultForCurrent(){ return isGPTSel() ? OPT_PROMPT_GPTIMAGE : DEFAULT_OPTPROMPT_TEXT; }
+function optStorageKey(){ return 'sw_optprompt_' + curProvider(); }
+function setupOptPrompt(){
+  // 默认按当前模型取; 但绝不覆盖用户已保存的 Seedream 提示词
+  $('optPrompt').value = localStorage.getItem(optStorageKey()) || DEFAULT_OPTPROMPT_TEXT;
+  $('optPrompt').oninput = ()=>{ localStorage.setItem(optStorageKey(), $('optPrompt').value); saveOptPromptDebounced(); };
+  $('chatModel').onchange = ()=>{ if($('chatModel').value) localStorage.setItem('sw_chat',$('chatModel').value); }; }
+function refreshOptPromptForModel(){
+  var g = isGPTSel(); var saved = localStorage.getItem(g?'sw_optprompt_gpt':'sw_optprompt');
+  $('optPrompt').value = saved || optDefaultForCurrent();
+}
+async function loadPrefs(){ try{ const p=await jget('/api/prefs'); if(p.opt_prompt && !localStorage.getItem(optStorageKey())) $('optPrompt').value=p.opt_prompt; }catch(e){} }
+function saveOptPromptDebounced(){ clearTimeout(window._optpt);
+  window._optpt=setTimeout(async ()=>{ try{ await jput('/api/prefs',{opt_prompt:$('optPrompt').value}); showSaved(); }catch(e){} },600); } // 本地按optStorageKey已存, 服务端仅存当前值
+function showSaved(){ const el=document.getElementById('optSaveState'); if(!el) return; el.style.opacity='1';
+  clearTimeout(window._savedT); window._savedT=setTimeout(()=>{ el.style.opacity='0'; },1600); }
+
+/* ---------- 模型选项(按 provider 动态) ---------- */
+function renderModelOptions(){
+  const box=$('modelOptions'); const p=$('provider').value;
+  if(p==='byteplus'){
+    box.innerHTML=`<div class="row" style="margin-top:10px">
+      <div><label>尺寸</label><select id="size"><option value="1.5K" selected>1.5K（默认推荐）</option><option value="2K">2K（更清晰，较慢）</option><option value="1K">1K（最快）</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="3:4">3:4</option></select></div>
+      <div><label>生图内置优化</label><select id="optMode"><option value="standard" selected>standard（默认，慢而好）</option><option value="fast">fast（更快，质量略降）</option></select></div>
+    </div>`;
+  } else {
+    const is4k=/4k/i.test($('imageModel').value||'');
+    const sizeOpts= is4k
+      ? `<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024</option><option value="1024x1536">1024x1536</option><option value="2048x2048">2048x2048</option><option value="2560x1440">2560x1440</option><option value="3840x2160">3840x2160</option><option value="4096x4096">4096x4096</option>`
+      : `<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024</option><option value="1024x1536">1024x1536</option>`;
+    box.innerHTML=`<div class="row" style="margin-top:10px">
+      <div><label>尺寸</label><select id="oSize">${sizeOpts}</select></div>
+      <div><label>质量</label><select id="oQuality"><option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high" selected>高（更精细，较慢）</option></select></div>
+      <div><label>格式</label><select id="oFmt"><option value="png" selected>png</option><option value="jpeg">jpeg</option><option value="webp">webp</option></select></div>
+      <div><label>背景</label><select id="oBackground"><option value="auto" selected>自动</option><option value="transparent">透明背景</option><option value="opaque">不透明背景</option></select></div>
+    </div>
+    ${is4k?'<div class="small-note">已识别为 4K 模型，提供更高分辨率（最终以中转支持为准）</div>':''}`;
+  }
+}
+
+/* ---------- 参考图 ---------- */
+function compressImage(file, maxEdge=2048, quality=0.95){
+  return new Promise((resolve,reject)=>{ const rd=new FileReader();
+    rd.onload=ev=>{ const img=new Image(); img.onload=()=>{ let w=img.width,h=img.height; const m=Math.max(w,h);
+      if(m>maxEdge){ const r=maxEdge/m; w=Math.round(w*r); h=Math.round(h*r); }
+      const c=document.createElement('canvas'); c.width=Math.max(1,w); c.height=Math.max(1,h);
+      const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.drawImage(img,0,0,c.width,c.height);
+      const isPng=/image\/png|image\/webp/.test(file.type);
+      const type=isPng?'image/png':'image/jpeg';
+      let url='';
+      try{ url=c.toDataURL(type,quality); }catch(e){ url=''; }
+      if(!url || url.length<40 || url.indexOf('data:image/')!==0){ reject(new Error('image_compress_failed')); return; }
+      resolve(url); };
+      img.onerror=()=>reject(new Error('image_decode_failed')); img.src=ev.target.result; };
+    rd.onerror=()=>reject(new Error('read_failed')); rd.readAsDataURL(file); });
+}
+$('fileInput').onchange = async e=>{ const files=Array.from(e.target.files||[]); let added=0;
+  for(const f of files){ if(refs.length>=10){ toast('最多 10 张参考图'); break; }
+    try{ const u=await compressImage(f); refs.push({url:u, role:'auto'}); added++; }catch(err){ console.error(err); } }
+  if(added) toast('已添加并压缩 '+added+' 张'); renderRefs(); e.target.value=''; };
+function addRefUrl(){ const u=$('refUrl').value.trim(); if(u){ refs.push({url:u, role:'auto'}); $('refUrl').value=''; renderRefs(); } }
+function initSortable(){
+  const el=$('refs'); if(!el || el._sortable) return;
+  if(!window.Sortable) return;
+  el._sortable = new Sortable(el, {
+    animation: 180,
+    draggable: '.ref[data-idx]',
+    filter: '.add',
+    ghostClass: 'drag-ghost',
+    onEnd: ()=> {
+      const cards=[...el.querySelectorAll('.ref[data-idx]')];
+      const order=cards.map(c=>+c.dataset.idx);
+      const newRefs=order.map(i=>refs[i]).filter(Boolean);
+      if(newRefs.length){ refs=newRefs; }
+      cards.forEach((c,i)=>{ c.dataset.idx=i; const idxEl=c.querySelector('.idx'); if(idxEl) idxEl.textContent='#'+(i+1); });
+      saveDraft();
+    }
+  });
+}
+function refUrls(){ return refs.map(r=>r.url).filter(Boolean); }
+function refRoles(){ return refs.map(r=>r.role||'auto'); }
+const REF_ROLES=['auto','人设','构图','场景','风格','服装','其他'];
+function renderRefs(){ const box=$('refs'); box.innerHTML='';
+  refs.forEach((r,i)=>{ const d=document.createElement('div'); d.className='ref'; d.dataset.idx=i;
+    const thumb=document.createElement('div'); thumb.className='thumb';
+    const img=document.createElement('img'); img.src=r.url||''; img.onerror=()=>{ img.removeAttribute('src'); img.style.cssText='width:100%;height:100%;background:var(--card2)'; };
+    const del=document.createElement('button'); del.className='del'; del.textContent='×';
+    del.onclick=e=>{ e.stopPropagation(); refs.splice(i,1); renderRefs(); };
+    const idx=document.createElement('span'); idx.className='idx'; idx.textContent='#'+(i+1);
+    thumb.append(img,del,idx);
+    const sel=document.createElement('select'); sel.className='refrole'; sel.dataset.i=i;
+    REF_ROLES.forEach(rl=>{ const o=document.createElement('option'); o.value=rl; o.textContent=rl==='auto'?'作用':rl; sel.appendChild(o); });
+    sel.value=r.role||'auto';
+    sel.onchange=()=>{ refs[i].role=sel.value; saveDraft(); };
+    sel.addEventListener('click', e=>e.stopPropagation());
+    sel.addEventListener('pointerdown', e=>e.stopPropagation());
+    d.append(thumb);       // 图容器在上(含#编号/关闭)
+    d.appendChild(sel);    // 下拉在图片正下方
+    d.addEventListener('click', e=>{ if(e.target.closest('.del')||e.target.closest('.refrole')) return; const ti=+d.dataset.idx; if(refs[ti]!=null) viewImage(refs[ti].url); });
+    box.appendChild(d); });
+  // 末尾的方形"添加"按钮(尺寸与图片预览一致)
+  const add=document.createElement('div'); add.className='ref add';
+  add.style.cssText='display:flex;align-items:center;justify-content:center;color:var(--mut);cursor:pointer';
+  add.innerHTML='<svg viewBox="0 0 24 24" style="width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M12 5v14M5 12h14"/></svg>';
+  add.onclick=()=>{ fileInput.click(); }; box.appendChild(add);
+  initSortable(); saveDraft(); }
+
+/* ---------- 优化提示词 ---------- */
+let optState='normal'; let lastOriginal=null, lastOptimized=null, showingOptimized=false;
+async function optimizePrompt(){
+  const b=$('optBtn'); const userInput=$('prompt').value;
+  lastOriginal=userInput; lastOptimized=null; showingOptimized=true;
+  b.disabled=true; b.innerHTML='<span class="spin"></span>正在优化…';
+  try{
+    const cmv=chatModelValue(); const [cp,cm]=(cmv||':').split('::');
+    let desc=null;
+    if($('optFlow').value==='two' && refs.length){
+      $('optResult').textContent='正在提取参考图特征(中文)…';
+      const dd=await jpost('/api/describe',{provider:cp,chat_model:cm,refs:refUrls(),ref_roles:refRoles(),prompt:userInput});
+      desc=dd.description||''; $('imgDesc').value=desc; $('imgDescWrap').classList.remove('hide');
+      $('optResult').textContent='正在合成优化提示词…';
+    }
+    const body={provider:cp,chat_model:cm,prompt:userInput,optimize_prompt:$('optPrompt').value};
+    if(desc){ body.image_desc=desc; } else { body.refs=refUrls(); body.ref_roles=refRoles(); body.use_vision=$('useVision').checked; }
+    const d=await jpost('/api/optimize',body);
+    lastOptimized=d.optimized_prompt;
+    $('prompt').value=d.optimized_prompt; optState='optimized';
+    $('optResult').textContent='已优化（可编辑描述/提示词）；点「退回原输入」可切换';
+    $('undoOptBtn').style.display='inline-flex'; $('undoOptBtn').textContent='↩ 退回原输入';
+    toast('已优化提示词'); saveDraft();
+  }catch(e){ toast('优化失败: '+e.message); }
+  finally{ b.disabled=false; b.textContent='优化提示词'; }
+}
+function toggleVersion(){
+  if(optState!=='optimized' || lastOptimized==null) return;
+  if(showingOptimized){
+    $('prompt').value = lastOriginal; showingOptimized=false;
+    $('undoOptBtn').textContent='✓ 查看优化后';
+  } else {
+    $('prompt').value = lastOptimized; showingOptimized=true;
+    $('undoOptBtn').textContent='↩ 退回原输入';
+  }
+  saveDraft();
+}
+function clearDraftUI(){
+  $('prompt').value=''; $('optResult').textContent='';
+  $('imgDesc').value=''; $('imgDescWrap').classList.add('hide');
+  optState='normal'; lastOriginal=lastOptimized=null; showingOptimized=false;
+  $('undoOptBtn').style.display='none';
+  localStorage.setItem('sw_draft_prompt',''); toast('已清空提示词');
+}
+
+/* ---------- 生成(后台任务+轮询) ---------- */
+function renderResults(box, d){ const total=Math.round((Date.now()-_g0)/1000); box.innerHTML='';
+  const sum=document.createElement('div'); sum.className='small-note'; sum.style.cssText='margin:0 0 10px;color:var(--acc2)';
+  sum.textContent='✓ 生成完成 · 总耗时 '+total+' 秒'; box.appendChild(sum);
+  (d.images||[]).forEach(im=>{ const w=document.createElement('div'); w.className='res';
+    const img=document.createElement('img'); img.src=im.url; img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url);
+    const a=document.createElement('a'); a.href=im.download; a.download=''; a.innerHTML=icon('dl')+'下载';
+    w.append(img,a); box.appendChild(w); }); }
+function pollTask(taskId, box, btnAll){
+  const iv=setInterval(async ()=>{ try{ const t=await jget('/api/task/'+taskId); const st=t._status;
+    if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t); notifyBrowser('生成完成','已生成 '+(t.images||[]).length+' 张');
+      toast('生成成功'); clearDraft(); loadHistory(); btnAll.forEach(b=>b.disabled=false); }
+    else if(st==='failed'){ clearInterval(iv); genTimerStop();
+      box.innerHTML='<div class="small-note">失败: '+esc(t.error||'未知错误')+'</div>'; notifyBrowser('生成失败',t.error||'未知错误');
+      toast('生成失败'); btnAll.forEach(b=>b.disabled=false); } }catch(e){} }, 3000); }
+async function generate(){
+  const userPrompt=$('prompt').value; if(!userPrompt.trim()){ toast('请输入提示词'); return; }
+  const box=$('results'); const btnAll=document.querySelectorAll('.btn.primary'); btnAll.forEach(b=>b.disabled=true);
+  const [cp,cm]=(chatModelValue()||':').split('::');
+  const optPrompt=$('optPrompt').value, useVision=$('useVision').checked;
+  let finalPrompt=userPrompt, isOpt=false;
+  genTimerStart(); genShow('正在生成图片…');
+  try{
+    const isBP=$('provider').value==='byteplus';
+    const body={provider:$('provider').value,image_model:$('imageModel').value,prompt:finalPrompt,
+      original_prompt:userPrompt, pre_optimized_prompt:isOpt?finalPrompt:null, refs:refUrls(), ref_roles:refRoles(),
+      size: isBP ? $('size').value : ($('oSize')?$('oSize').value:'auto'),
+      output_format: isBP ? 'png' : ($('oFmt')?$('oFmt').value:'png'),
+      watermark:false,
+      opt_mode: isBP ? $('optMode').value : null,
+      quality: isBP ? null : ($('oQuality')?$('oQuality').value:'auto'),
+      background: isBP ? null : ($('oBackground')?$('oBackground').value:'auto'),
+      optimize:false, chat_provider:cp||null, chat_model:cm||null, optimize_prompt:optPrompt, use_vision:useVision,
+      clean_render:$('cleanRender')?$('cleanRender').checked:false,
+      compress: $('compress')?$('compress').checked:false};
+    requestNotif();
+    const sub=await jpost('/api/generate',body,30000);
+    pollTask(sub.task_id, box, btnAll);
+  }catch(e){ genTimerStop(); box.innerHTML='<div class="small-note">提交失败: '+esc(e.message)+'</div>'; toast('提交失败'); btnAll.forEach(b=>b.disabled=false); }
+  finally{ btnAll.forEach(b=>b.disabled=false); }
+}
+
+/* ---------- 历史 ---------- */
+let histModelFilter='';
+async function loadHistory(){ try{ currentHistory=await jget('/api/history'); }catch(e){ return; }
+  // 刷新"按模型筛选"下拉
+  const flt=$('histFilter');
+  if(flt && !flt.dataset.built){ flt.dataset.built='1';
+    const models=[...new Set(currentHistory.map(h=>h.model).filter(Boolean))];
+    models.forEach(mod=>{ const o=document.createElement('option'); o.value=mod; o.textContent=mod; flt.appendChild(o); });
+  }
+  renderHistory();
+}
+function renderHistory(){
+  const box=$('history'); box.innerHTML='';
+  const rows=currentHistory.filter(h=>!histModelFilter || h.model===histModelFilter);
+  if(!rows.length){ box.innerHTML='<div class="small-note">'+(histModelFilter?'该模型暂无记录':'暂无记录')+'</div>'; return; }
+  rows.forEach(h=>{ const d=document.createElement('div'); d.className='hitem';
+    const thumb=(h.images||[])[0]; if(thumb){ const img=document.createElement('img'); img.src=thumb.url; d.appendChild(img); }
+    const meta=document.createElement('div'); meta.className='meta';
+    const s=document.createElement('span'); s.textContent=(h.model||'').split('-').slice(0,2).join('-');
+    const small=document.createElement('small'); small.textContent=new Date(h.ts*1000).toLocaleTimeString();
+    const del=document.createElement('button'); del.className='btn ghost'; del.innerHTML=icon('trash');
+    del.onclick=async e=>{ e.stopPropagation(); await fetch('/api/history/'+h.id,{method:'DELETE'}); loadHistory(); };
+    meta.append(s,small,del); d.appendChild(meta); d.onclick=()=>openViewer(h); box.appendChild(d); }); }
+function hMeta(h){
+  const items=[['模型',h.model],['尺寸',h.size],['参考图',(h.refs||0)+' 张'],['质量',h.quality],['内置优化',h.opt_mode],
+    ['格式',h.format],['背景',h.background],['时间',new Date((h.ts||0)*1000).toLocaleString()]];
+  const ch=items.filter(x=>x[1]!==null&&x[1]!==undefined&&x[1]!=='')
+    .map(x=>`<div style="background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px"><span style="display:block;font-size:11px;color:var(--mut)">${esc(x[0])}</span><b style="font-size:13px">${esc(String(x[1]))}</b></div>`).join('');
+  return `<div class="card" style="margin-top:2px"><label>生成信息</label><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px">${ch}</div></div>`; }
+function openViewer(h){
+  const imgs=(h.images||[]).map(i=>i.url); if(!imgs.length){ toast('无图片'); return; }
+  const v=document.createElement('div'); v.id='viewer';
+  v.style.cssText='position:fixed;inset:0;z-index:95;background:var(--bg);overflow:auto;';
+  v.innerHTML=`<div style="position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)">
+    <button class="btn" onclick="document.getElementById('viewer').remove()">${icon('x')} 返回</button>
+    <button class="btn primary" onclick="downloadAll('${h.id}')">${icon('dl')} 下载全部</button></div>
+    <div style="max-width:1100px;margin:0 auto;padding:16px 14px 40px">
+      <div id="vGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px"></div>
+      ${hMeta(h)}
+      <div class="card" style="margin-top:18px"><label>提示词</label><pre style="white-space:pre-wrap;font-size:13px;margin:0;color:var(--txt)">${esc(h.prompt)}</pre></div>
+      ${h.optimized_prompt?`<div class="card"><label>优化后提示词</label><pre style="white-space:pre-wrap;font-size:13px;margin:0;color:var(--txt)">${esc(h.optimized_prompt)}</pre></div>`:''}
+    </div>`;
+  document.body.appendChild(v);
+  const g=v.querySelector('#vGrid'); imgs.forEach(u=>{ const img=document.createElement('img'); img.src=u;
+    img.style.cssText='width:100%;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;object-fit:contain;background:#000';
+    img.onclick=()=>viewImage(u); g.appendChild(img); }); }
+function downloadAll(id){ const h=currentHistory.find(x=>x.id===id); if(!h) return;
+  (h.images||[]).forEach(im=>{ const a=document.createElement('a'); a.href=im.download; a.download=''; a.click(); }); }
+function viewImage(src){ let v=document.getElementById('lightbox');
+  if(!v){ v=document.createElement('div'); v.id='lightbox';
+    v.style.cssText='position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
+    v.onclick=()=>v.remove(); document.body.appendChild(v); }
+  v.innerHTML='<img src="'+esc(src)+'" style="max-width:100%;max-height:94vh;border-radius:8px;object-fit:contain;box-shadow:0 12px 48px rgba(0,0,0,.5)">'; }
+
+/* ---------- 设置(provider 编辑) ---------- */
+let settingsView='list'; let editingProvider=null; let provSearch='';
+function renderSettings(){ const box=$('provEditor'); box.innerHTML='';
+  if(settingsView==='edit' && editingProvider && CONFIG[editingProvider]){ box.appendChild(providerEditor(editingProvider)); return; }
+  settingsView='list';
+  box.appendChild(providerListView());
+}
+function firstChar(s){ s=(s||'?'); const t=String(s).trim(); return t[0]?t[0].toUpperCase():'?'; }
+function providerListView(){
+  const wrap=document.createElement('div');
+  // 顶部: 标题"API设置" + "+ 新增提供方"(最右)
+  const top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px';
+  const h=document.createElement('div'); h.style.cssText='font-size:22px;font-weight:700;color:var(--txt)'; h.textContent='API设置';
+  const addBtn=document.createElement('button'); addBtn.className='btn'; addBtn.textContent='+ 新增提供方'; addBtn.onclick=addProvider;
+  top.append(h,addBtn); wrap.appendChild(top);
+  const row2=document.createElement('div'); row2.className='provlist-top';
+  const search=document.createElement('input'); search.type='text'; search.placeholder='搜索提供方'; search.value=provSearch;
+  search.addEventListener('input',()=>{ provSearch=search.value.trim().toLowerCase(); renderSettings(); });
+  row2.appendChild(search); wrap.appendChild(row2);
+  const keys=Object.keys(CONFIG).filter(k=>!provSearch || ((CONFIG[k].label||k).toLowerCase().includes(provSearch)));
+  keys.forEach(k=>wrap.appendChild(providerRow(k)));
+  return wrap;
+}
+function providerRow(key){
+  const p=CONFIG[key]; const nModels=(p.image_models||[]).length+(p.chat_models||[]).length;
+  const enabled=p.enabled!==false;
+  const el=document.createElement('div'); el.className='provrow';
+  el.innerHTML=`<div class="prov-avatar">${esc(firstChar(p.label||key))}</div>
+    <div class="prov-info"><div class="prov-name">${esc(p.label||key)}</div>
+      <div class="prov-badges"><span class="badge ${enabled?'on':''}">${enabled?'启用':'禁用'}</span><span class="badge">${nModels} 个模型</span></div></div>
+    <button class="prov-menu" title="更多">⋮</button>`;
+  el.onclick=()=>{ settingsView='edit'; editingProvider=key; renderSettings(); };
+  el.querySelector('.prov-menu').onclick=e=>{ e.stopPropagation(); toggleProvMenu(key,e); };
+  return el;
+}
+function toggleProvMenu(key, evt){
+  closeProvMenu(); const p=CONFIG[key]; const enabled=p.enabled!==false;
+  const m=document.createElement('div'); m.className='provmenu';
+  const dis=document.createElement('div'); dis.textContent= enabled?'禁用':'启用';
+  dis.onclick=()=>{ p.enabled = enabled?false:true; closeProvMenu(); renderSettings(); };
+  const del=document.createElement('div'); del.className='danger'; del.textContent='删除';
+  del.onclick=()=>{ if(confirm('删除提供方 '+key+' ?')){ delete CONFIG[key]; settingsView='list'; editingProvider=null; closeProvMenu(); renderSettings(); } };
+  m.append(dis,del); document.body.appendChild(m);
+  const r=evt.currentTarget.getBoundingClientRect();
+  let left=r.right-130; if(left<8) left=8;
+  m.style.top=(r.bottom+6)+'px'; m.style.left=left+'px';
+}
+function closeProvMenu(){ const m=document.querySelector('.provmenu'); if(m) m.remove(); }
+function providerEditor(key){
+  const wrap=document.createElement('div');
+  const back=document.createElement('button'); back.className='icon-btn'; back.title='返回提供方列表';
+  back.style.cssText='position:sticky;top:60px;z-index:20;margin-bottom:14px;box-shadow:0 4px 12px rgba(0,0,0,.25)';
+  back.innerHTML='<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>';
+  back.onclick=()=>{ settingsView='list'; editingProvider=null; renderSettings(); };
+  wrap.appendChild(back);
+  wrap.appendChild(providerCard(key));
+  return wrap;
+}
+function providerCard(key){
+  const p=CONFIG[key];
+  const card=document.createElement('div'); card.className='pcard';
+  card.innerHTML=`<div class="phead"><b id="pname_${key}">${esc(p.label||key)}</b>
+    <button class="btn ghost" onclick="delProvider('${key}')" title="删除服务方">${icon('trash')}</button></div>
+    <label>提供方名称</label>
+    <input type="text" id="plabel_${key}" value="${esc(p.label||key)}" oninput="document.getElementById('pname_${key}').textContent=this.value; CONFIG['${key}'].label=this.value">
+    <label>Base URL</label>
+    <input type="text" id="pbase_${key}" value="${esc(p.base_url||'')}" placeholder="https://api2.jojocode.com/v1" oninput="CONFIG['${key}'].base_url=this.value">
+    <label>API Key</label>
+    <input type="password" id="pkey_${key}" placeholder="留空则不修改" oninput="keyDraft['${key}']=this.value">
+    <div class="addbar">
+      <button class="btn small" onclick="detect('${key}')">${icon('search')}检测模型</button>
+      <button class="btn small" onclick="testConn('${key}')">连接测试</button>
+    </div>
+    <div id="det_${key}" class="det hide"></div>
+    ${modelListBlock(key,'image_models','生图模型')}
+    ${modelListBlock(key,'chat_models','文本模型')}
+    <div class="addbar" style="justify-content:flex-end;margin-top:12px">
+      <button class="btn primary" onclick="saveProvider('${key}')">保存</button>
+    </div>`;
+  const pk=card.querySelector('#pkey_'+key); if(pk && keyDraft[key]) pk.value=keyDraft[key];
+  renderList(key,'image_models',card.querySelector('#imglist_'+key));
+  renderList(key,'chat_models',card.querySelector('#chatlist_'+key));
+  fillDetDropdown(key);
+  return card; }
+function modelListBlock(key,type,label){
+  const listId = type==='image_models'?'imglist_'+key:'chatlist_'+key;
+  const selId  = type==='image_models'?'detImg_'+key:'detChat_'+key;
+  return `<label>${label}</label><div class="mlist" id="${listId}"></div>
+    <div class="addbar stretch" style="margin-top:8px">
+      <select id="${selId}" class="sel-hint" style="flex:1" onchange="this.classList.toggle('filled',this.value!=='')"><option value="">（选择模型）</option></select>
+      <button class="btn small" style="flex:none;min-width:64px" onclick="addModelFromDet('${key}','${type}')">添加</button>
+      <button class="btn small" style="flex:none;min-width:64px" onclick="addModel('${key}','${type}')">手动</button>
+    </div>`;
+}
+function fillDetDropdown(key){
+  ['image_models','chat_models'].forEach(type=>{
+    const selId = type==='image_models'?'detImg_'+key:'detChat_'+key;
+    const sel=document.getElementById(selId); if(!sel) return;
+    sel.innerHTML='<option value="">（检测后可下拉选择）</option>';
+    (_det[key]||[]).forEach(id=>{ const o=document.createElement('option'); o.value=id; o.textContent=id; sel.appendChild(o); });
+  });
+}
+function renderList(key,type,box){ box.innerHTML='';
+  (CONFIG[key][type]||[]).forEach((m,i)=>{ const row=document.createElement('div'); row.className='mrow';
+    row.innerHTML=`<input type="text" class="mid" data-id value="${esc(m.id||'')}" placeholder="模型ID" oninput="CONFIG['${key}']['${type}'][${i}].id=this.value">
+      <input type="text" data-label value="${esc(m.label||'')}" placeholder="显示名" oninput="CONFIG['${key}']['${type}'][${i}].label=this.value">
+      <button class="btn ghost del" onclick="removeModel('${key}','${type}',${i})">${icon('trash')}</button>`;
+    box.appendChild(row); }); }
+function addModel(key,type){ (CONFIG[key][type]=CONFIG[key][type]||[]).push({id:'',label:''}); renderSettings(); }
+function addModelFromDet(key,type){ const selId = type==='image_models'?'detImg_'+key:'detChat_'+key;
+  const sel=document.getElementById(selId);
+  if(sel && sel.value){ (CONFIG[key][type]=CONFIG[key][type]||[]).push({id:sel.value,label:sel.value}); renderSettings(); toast('已添加 '+sel.value); } }
+function removeModel(key,type,i){ CONFIG[key][type].splice(i,1); renderSettings(); }
+function addProvider(){ const k='custom'+Date.now(); CONFIG[k]={label:'新服务方',base_url:'',image_models:[],chat_models:[]}; settingsView='edit'; editingProvider=k; renderSettings();
+  const el=document.getElementById('plabel_'+k); if(el){ el.scrollIntoView({behavior:'smooth'}); el.focus(); } }
+function delProvider(key){ if(!confirm('删除服务方 '+key+' ?')) return; delete CONFIG[key]; settingsView='list'; editingProvider=null; renderSettings(); }
+async function detect(key){
+  const base=document.getElementById('pbase_'+key).value.trim();
+  const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
+  const box=document.getElementById('det_'+key); box.classList.remove('hide'); box.innerHTML='<div class="small-note"><span class="spin"></span>检测中…</div>';
+  try{ const d=await jpost('/api/detect',{provider:key,base_url:base,api_key:api||undefined});
+    _det[key]=d.models||[];
+    box.innerHTML=_det[key].length
+      ? `<div class="small-note">检测到 ${_det[key].length} 个模型，请在下方「生图/文本模型」栏用下拉选择后点「添加」</div>`
+      : '<div class="small-note">未返回模型列表（可能不支持 /models，请手动填写）</div>';
+    fillDetDropdown(key);
+  }catch(e){ box.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; } }
+async function testConn(key){
+  const base=document.getElementById('pbase_'+key).value.trim();
+  const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
+  const model=(CONFIG[key].chat_models||[])[0]?.id || null;
+  const box=document.getElementById('det_'+key); box.classList.remove('hide'); box.innerHTML='<div class="small-note"><span class="spin"></span>正在测试连接…</div>';
+  try{ const r=await jpost('/api/test',{provider:key,base_url:base,api_key:api||undefined,model:model||undefined});
+    const ok=/模型可调用/.test(r.message);
+    box.innerHTML='<div class="small-note">'+(ok?'<span style="color:var(--acc2)">✓</span>':'<span style="color:var(--bad)">✗</span>')+' '+esc(r.message)+'</div>';
+  }catch(e){ box.innerHTML='<div class="small-note">测试失败: '+esc(e.message)+'</div>'; } }
+async function saveProvider(key){
+  CONFIG[key].label=document.getElementById('plabel_'+key).value.trim()||key;
+  CONFIG[key].base_url=document.getElementById('pbase_'+key).value.trim();
+  CONFIG[key].image_models=readList(key,'image_models');
+  CONFIG[key].chat_models=readList(key,'chat_models');
+  const inp=document.getElementById('pkey_'+key); const v=(inp?inp.value.trim():'')||keyDraft[key]||''; if(v) keyDraft[key]=v;
+  try{
+    await jput('/api/config',CONFIG);
+    if(v) await jpost('/api/settings',{keys:{[key]:v}});
+    toast('已保存'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions();
+  }catch(e){ toast('保存失败: '+e.message); } }
+function readList(key,type){ const box = type==='image_models'?document.getElementById('imglist_'+key):document.getElementById('chatlist_'+key);
+  if(!box) return []; const rows=box.querySelectorAll('.mrow'); const out=[];
+  rows.forEach(r=>{ const id=r.querySelector('[data-id]').value.trim(); const lb=r.querySelector('[data-label]').value.trim(); if(id) out.push({id,label:lb||id}); });
+  return out; }
+
+function esc(s){ return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+document.addEventListener('click', closeProvMenu);
+loadPrefs();
+init();
+</script>
+</body>
+</html>

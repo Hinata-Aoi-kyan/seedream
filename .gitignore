@@ -1,0 +1,10 @@
+# 敏感/私人文件(绝不推送)
+keys.json
+prefs.json
+*.db
+media/
+server.log
+server.pid
+__pycache__/
+*.pyc
+.env
