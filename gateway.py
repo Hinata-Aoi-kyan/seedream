@@ -447,9 +447,14 @@ def detect_models(body):
     url = base.rstrip("/") + "/models"
     st, data = http_json("GET", url, {"Authorization": f"Bearer {key}"}, None)
     if st != 200:
-        raise RuntimeError(f"检测失败({st}): {json.dumps(data, ensure_ascii=False)[:300]}")
+        msg = (data.get("error", {}).get("message") if isinstance(data, dict) and isinstance(data.get("error"), dict) else str(data))[:200] if data else "(无返回)"
+        if st in (401, 403):
+            return {"models": [], "unsupported": False,
+                    "message": f"鉴权失败(HTTP {st})：{msg}。请检查：① Base URL 是否为 {base}（不要多加 /v1，应为 .../provider/v1）；② API Key 是否正确、是否在该站点的 API keys 页创建。"}
+        return {"models": [], "unsupported": True,
+                "message": f"接口异常(HTTP {st})：{msg}。该中转可能不支持列出模型，或路径不对。"}
     ids = [m.get("id") for m in (data.get("data") or []) if m.get("id")]
-    return {"models": ids}
+    return {"models": ids, "unsupported": False, "message": f"检测到 {len(ids)} 个模型"}
 def test_connection(body):
     provider = body.get("provider") or ""
     base = body.get("base_url") or (CONFIG.get(provider, {}).get("base_url") if provider else "")

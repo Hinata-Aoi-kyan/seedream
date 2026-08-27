@@ -733,7 +733,7 @@ function providerCard(key){
   card.innerHTML=`<div class="phead"><b id="pname_${key}">${esc(p.label||key)}</b>
     <button class="btn ghost" onclick="delProvider('${key}')" title="删除服务方">${icon('trash')}</button></div>
     <label>提供方名称</label>
-    <input type="text" id="plabel_${key}" value="${esc(p.label||key)}" oninput="document.getElementById('pname_${key}').textContent=this.value; CONFIG['${key}'].label=this.value">
+    <input type="text" id="plabel_${key}" value="${esc(p.label||'')}" placeholder="服务方名称（如 中转/ComfyUI）" oninput="document.getElementById('pname_${key}').textContent=this.value||'未命名'; CONFIG['${key}'].label=this.value">
     <label>Base URL</label>
     <input type="text" id="pbase_${key}" value="${esc(p.base_url||'')}" placeholder="https://api2.jojocode.com/v1" oninput="CONFIG['${key}'].base_url=this.value">
     <label>API Key</label>
@@ -782,7 +782,7 @@ function addModelFromDet(key,type){ const selId = type==='image_models'?'detImg_
   const sel=document.getElementById(selId);
   if(sel && sel.value){ (CONFIG[key][type]=CONFIG[key][type]||[]).push({id:sel.value,label:sel.value}); renderSettings(); toast('已添加 '+sel.value); } }
 function removeModel(key,type,i){ CONFIG[key][type].splice(i,1); renderSettings(); }
-function addProvider(){ const k='custom'+Date.now(); CONFIG[k]={label:'新服务方',base_url:'',image_models:[],chat_models:[]}; settingsView='edit'; editingProvider=k; renderSettings();
+function addProvider(){ const k='custom'+Date.now(); CONFIG[k]={label:'',base_url:'',image_models:[],chat_models:[]}; settingsView='edit'; editingProvider=k; renderSettings();
   const el=document.getElementById('plabel_'+k); if(el){ el.scrollIntoView({behavior:'smooth'}); el.focus(); } }
 function delProvider(key){ if(!confirm('删除服务方 '+key+' ?')) return; delete CONFIG[key]; settingsView='list'; editingProvider=null; renderSettings(); }
 async function detect(key){
@@ -793,7 +793,7 @@ async function detect(key){
     _det[key]=d.models||[];
     box.innerHTML=_det[key].length
       ? `<div class="small-note">检测到 ${_det[key].length} 个模型，请在下方「生图/文本模型」栏用下拉选择后点「添加」</div>`
-      : '<div class="small-note">未返回模型列表（可能不支持 /models，请手动填写）</div>';
+      : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加）')+'</div>');
     fillDetDropdown(key);
   }catch(e){ box.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; } }
 async function testConn(key){
