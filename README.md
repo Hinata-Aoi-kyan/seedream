@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Seedream Web · 手机本地生图网关
 
 一个跑在 **手机 Termux**（或任何 Python 环境）里的本地网关 + 网页界面。
@@ -69,3 +70,6 @@ python3 gateway.py
 - **存相册**：网关直接把图片写入 `~/storage/pictures/seedream-web`（即 `/sdcard/Pictures/seedream-web`），所以你**不需要手动下载**，生成即进相册。
 - **生成记录**：存在本机 SQLite `history.db`，图片原图保留在 `Pictures/seedream-web`，网页里可随时回看。
 - **提示词优化**：先用文本模型把用户需求扩成结构化的高质量英文 prompt，再喂给生图模型（两段式串联）。
+=======
+# seedream
+>>>>>>> origin/main
