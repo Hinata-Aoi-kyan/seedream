@@ -672,7 +672,7 @@ let histSelMode=false; const histSel=new Set();
 function initHistSelect(){
   var btn=document.getElementById('histSelectBtn');
   if(btn && !btn.dataset.bound){ btn.dataset.bound='1';
-    btn.addEventListener('click', function(){ histSelMode=!histSelMode; histSel.clear(); btn.textContent=histSelMode?'完成':'多选'; document.getElementById('histSelBar').classList.toggle('hide',!histSelMode); renderHistory(); });
+    btn.addEventListener('click', function(){ histSelMode=!histSelMode; histSel.clear(); btn.textContent=histSelMode?'完成':'多选'; document.getElementById('histSelBar').classList.toggle('hide',!histSelMode); var c=document.getElementById('histSelCount'); if(c) c.textContent='已选 0 张'; renderHistory(); });
   }
   var bar=document.getElementById('histSelBar');
   if(bar && !bar.dataset.bound2){ bar.dataset.bound2='1';
