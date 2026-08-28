@@ -1,4 +1,5 @@
 # 敏感/私人文件(绝不推送)
+providers.json  # 用户设置(提供方/模型), 不推送不被覆盖
 keys.json
 prefs.json
 *.db

@@ -14,11 +14,23 @@ from urllib.error import HTTPError, URLError
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "providers.json"
+DEFAULT_CONFIG_PATH = BASE_DIR / "providers.default.json"
 KEYS_PATH = BASE_DIR / "keys.json"
 DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "history.db"))
 PORT = int(os.getenv("PORT", "8765"))
 HOST = os.getenv("HOST", "0.0.0.0")
-CONFIG = json.loads(CONFIG_PATH.read_text("utf-8"))
+def _load_config():
+    if CONFIG_PATH.exists():
+        try:
+            return json.loads(CONFIG_PATH.read_text("utf-8"))
+        except Exception:
+            pass
+    if DEFAULT_CONFIG_PATH.exists():
+        d = json.loads(DEFAULT_CONFIG_PATH.read_text("utf-8"))
+        CONFIG_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=2), "utf-8")
+        return d
+    return {}
+CONFIG = _load_config()
 
 # 后台任务状态(内存)
 _jobs = {}
