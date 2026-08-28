@@ -274,7 +274,6 @@
           <button class="btn small" onclick="histSelectAll()">全选</button>
           <button class="btn small" onclick="histBatchDownload()">下载</button>
           <button class="btn small" onclick="histBatchDelete()" style="color:var(--bad)">删除</button>
-          <button class="btn small" onclick="toggleHistSelect()">完成</button>
         </div>
         <select id="histFilter" onchange="histModelFilter=this.value;renderHistory()"
           style="width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13px;color:var(--txt);margin-bottom:10px">
@@ -679,6 +678,7 @@ function renderHistory(){
   const rows=currentHistory.filter(h=>!histModelFilter || h.model===histModelFilter);
   if(!rows.length){ box.innerHTML='<div class="small-note">'+(histModelFilter?'该模型暂无记录':'暂无记录')+'</div>'; return; }
   rows.forEach(h=>{ const d=document.createElement('div'); d.className='hitem';
+    const thumb=(h.images||[])[0]; if(thumb){ const img=document.createElement('img'); img.src=thumb.url; d.appendChild(img); }
     if(histSelMode){ d.classList.toggle('hsel', histSel.has(h.id));
       const mark=document.createElement('div'); mark.className='hmark'; mark.textContent='✓';
       if(!histSel.has(h.id)) mark.style.opacity='0';
