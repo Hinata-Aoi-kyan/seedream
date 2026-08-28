@@ -303,6 +303,8 @@ const ICONS = {
   plus:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   trash:'<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
   dl:'<svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
+  copy:'<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+
   x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>'
 };
 function icon(name){ return ICONS[name] || ''; }
@@ -679,7 +681,7 @@ function openViewer(h){
     <div style="max-width:1100px;margin:0 auto;padding:16px 14px 40px">
       <div id="vGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:0"></div>
       ${hMeta(h)}
-      <div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">提示词</label><button class="btn small" onclick="copyH('${h.id}')">${icon('dl')} 复制</button></div><pre style="white-space:pre-wrap;font-size:13px;margin:6px 0 0;color:var(--txt)">${esc(h.prompt)}</pre></div>
+      <div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">提示词</label><button class="btn small" onclick="copyH('${h.id}')">${icon('copy')} 复制</button></div><pre style="white-space:pre-wrap;font-size:13px;margin:6px 0 0;color:var(--txt)">${esc(h.prompt)}</pre></div>
       ${h.optimized_prompt?`<div class="card"><label>优化后提示词</label><pre style="white-space:pre-wrap;font-size:13px;margin:0;color:var(--txt)">${esc(h.optimized_prompt)}</pre></div>`:''}
     </div>`;
   document.body.appendChild(v);
@@ -694,31 +696,29 @@ function copyPrompt(txt){ try{ navigator.clipboard.writeText(txt||'').then(()=>t
 function viewImage(src){
   let v=document.getElementById('lightbox');
   if(!v){ v=document.createElement('div'); v.id='lightbox';
-    v.style.cssText='position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.96);overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none';
+    v.style.cssText='position:fixed;inset:0;z-index:200;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;';
     document.body.appendChild(v); }
   lbScale=1;
-  v.innerHTML='<div style="position:absolute;inset:0;overflow:hidden;cursor:grab"><img id="lbImg" src="'+esc(src)+'" style="position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform:translate(-50%,-50%) scale('+lbScale+');transition:transform .15s ease"></div>'
-    +'<div style="position:absolute;top:14px;right:14px;display:flex;gap:8px;z-index:10">'
-    +'<button class="btn small" onclick="lbZoom(1.4)">+ 放大</button>'
-    +'<button class="btn small" onclick="lbZoom(0.7)">- 缩小</button>'
-    +'<button class="btn small" onclick="lbReset()">重置</button>'
-    +'<button class="btn small" onclick="lbClose()">关闭</button></div>';
+  v.innerHTML='<img id="lbImg" src="'+esc(src)+'" style="position:absolute;left:0;top:0;width:100vw;height:100vh;object-fit:contain;transform:scale(1);transform-origin:center center;transition:transform .12s ease">';
   lbImg=document.getElementById('lbImg');
-  // 滚轮缩放
-  v.onwheel=e=>{ e.preventDefault(); lbZoom(e.deltaY<0?1.15:0.87); };
-  // 双击缩放
-  v.ondblclick=e=>{ e.preventDefault(); lbZoom(lbScale>1.5?0.5:2); };
-  // 拖动平移 + 单击空白关闭(合并)
-  let dragging=false, lbMoved=false, sx=0, sy=0, ox=0, oy=0;
-  v.onpointerdown=e=>{ dragging=true; lbMoved=false; v.style.cursor='grabbing'; sx=e.clientX; sy=e.clientY;
-    try{ const m=new DOMMatrixReadOnly(getComputedStyle(lbImg).transform); ox=m.m41; oy=m.m42; }catch(_){ ox=0; oy=0; }
-    try{ v.setPointerCapture(e.pointerId); }catch(_){} };
-  v.onpointermove=e=>{ if(!dragging||!lbImg) return; const dx=e.clientX-sx, dy=e.clientY-sy;
-    if(Math.abs(dx)>6||Math.abs(dy)>6) lbMoved=true;
-    lbImg.style.left='calc(50% + '+(ox+dx)+'px)'; lbImg.style.top='calc(50% + '+(oy+dy)+'px)'; };
-  v.onpointerup=e=>{ dragging=false; v.style.cursor='grab'; };
-  v.onclick=e=>{ if(!lbMoved && e.target===v) v.remove(); };
+  // 阻止页面手势/缩放
+  v.addEventListener('touchmove', e=>{ e.preventDefault(); }, {passive:false});
+  v.addEventListener('gesturestart', e=>{ e.preventDefault(); }, {passive:false});
+  // 双指捏合缩放
+  let pinch=0, pinchScale=1;
+  v.addEventListener('touchstart', e=>{ if(e.touches.length===2){ pinch=getDist(e.touches); pinchScale=lbScale; } }, {passive:false});
+  v.addEventListener('touchmove', e=>{ e.preventDefault(); if(e.touches.length===2){ const d=getDist(e.touches); if(pinch>0){ lbScale=pinchScale*(d/pinch); if(lbScale<0.4) lbScale=0.4; if(lbScale>5) lbScale=5; lbImg.style.transform='scale('+lbScale+')'; } } }, {passive:false});
+  v.addEventListener('touchend', e=>{ if(e.touches.length<2) pinch=0; }, {passive:false});
+  // 双击缩放(桌面/辅助)
+  v.ondblclick=e=>{ e.preventDefault(); lbScale=lbScale>1.5?1:2; lbImg.style.transform='scale('+lbScale+')'; };
+  // 单击关闭(仅非拖动)
+  let down=0, moved=false, sx2=0, sy2=0;
+  v.onpointerdown=e=>{ moved=false; sx2=e.clientX; sy2=e.clientY; };
+  v.onpointermove=e=>{ if(Math.abs(e.clientX-sx2)>8||Math.abs(e.clientY-sy2)>8) moved=true; };
+  v.onpointerup=e=>{ if(!moved && e.target===v){ v.remove(); } };
+  v.onclick=e=>{ if(!moved && e.target===v) v.remove(); };
 }
+function getDist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
 function lbZoom(f){ lbScale=lbScale*f; if(lbImg) lbImg.style.transform='translate(-50%,-50%) scale('+lbScale+')'; }
 function lbReset(){ lbScale=1; if(lbImg){ lbImg.style.transform='translate(-50%,-50%) scale(1)'; lbImg.style.left='50%'; lbImg.style.top='50%'; } }
 
