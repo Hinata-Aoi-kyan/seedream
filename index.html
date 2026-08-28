@@ -109,6 +109,9 @@
   .hitem .meta span{font-size:10px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
   .hitem .meta small{font-size:11px;color:var(--acc2);flex:none}
   .hitem .meta .btn.ghost{color:#fff}
+  .hitem.hsel{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+  .hmark{position:absolute;top:6px;left:6px;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;z-index:5}
+
   details{border:1px solid var(--line);border-radius:10px;padding:0 10px;margin-top:10px;background:var(--card2)}
   details summary{cursor:pointer;padding:10px 0;font-size:13px;color:var(--mut);list-style:none;display:flex;align-items:center;gap:6px}
   details summary::-webkit-details-marker{display:none}
@@ -262,7 +265,17 @@
     <!-- 记录页 -->
     <section id="page-history" class="page">
       <div class="card">
-        <label style="margin:0 0 8px;font-size:14px;color:var(--txt);white-space:nowrap">生成记录</label>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <label style="margin:0;font-size:14px;color:var(--txt);white-space:nowrap">生成记录</label>
+          <button class="btn small" id="histSelectBtn" onclick="toggleHistSelect()">多选</button>
+        </div>
+        <div id="histSelBar" class="hide" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px">
+          <span id="histSelCount" style="font-size:13px;color:var(--txt);flex:1;white-space:nowrap">已选 0 张</span>
+          <button class="btn small" onclick="histSelectAll()">全选</button>
+          <button class="btn small" onclick="histBatchDownload()">下载</button>
+          <button class="btn small" onclick="histBatchDelete()" style="color:var(--bad)">删除</button>
+          <button class="btn small" onclick="toggleHistSelect()">完成</button>
+        </div>
         <select id="histFilter" onchange="histModelFilter=this.value;renderHistory()"
           style="width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13px;color:var(--txt);margin-bottom:10px">
           <option value="">全部模型</option>
@@ -655,11 +668,24 @@ async function loadHistory(){ try{ currentHistory=await jget('/api/history'); }c
   }
   renderHistory();
 }
+let histSelMode=false; let histSel=new Set();
+function toggleHistSelect(){ histSelMode=!histSelMode; histSel.clear(); const b=$('histSelectBtn'); const bar=$('histSelBar'); if(b) b.textContent=histSelMode?'完成':'多选'; if(bar) bar.classList.toggle('hide',!histSelMode); renderHistory(); updateHistSelBar(); }
+function updateHistSelBar(){ const c=$('histSelCount'); if(c) c.textContent='已选 '+histSel.size+' 张'; }
+function histSelectAll(){ const rows=currentHistory.filter(h=>!histModelFilter || h.model===histModelFilter); if(histSel.size===rows.length){ histSel.clear(); } else { histSel=new Set(rows.map(h=>h.id)); } renderHistory(); updateHistSelBar(); }
+async function histBatchDownload(){ const ids=[...histSel]; let n=0; for(const id of ids){ const h=currentHistory.find(x=>x.id===id); if(h&&h.images){ (h.images||[]).forEach(im=>{ const a=document.createElement('a'); a.href=im.download; a.download=''; a.click(); n++; }); } } toast('已下载 '+n+' 张'); }
+async function histBatchDelete(){ const ids=[...histSel]; if(!ids.length){ toast('未选择'); return; } if(!confirm('确定删除选中的 '+ids.length+' 条记录？')) return; try{ const r=await fetch('/api/history/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})}); const j=await r.json(); toast('已删除 '+(j.deleted||ids.length)+' 条'); histSel.clear(); histSelMode=false; const b=$('histSelectBtn'); if(b)b.textContent='多选'; const bar=$('histSelBar'); if(bar)bar.classList.add('hide'); await loadHistory(); }catch(e){ toast('删除失败: '+e.message); } }
 function renderHistory(){
   const box=$('history'); box.innerHTML='';
   const rows=currentHistory.filter(h=>!histModelFilter || h.model===histModelFilter);
   if(!rows.length){ box.innerHTML='<div class="small-note">'+(histModelFilter?'该模型暂无记录':'暂无记录')+'</div>'; return; }
   rows.forEach(h=>{ const d=document.createElement('div'); d.className='hitem';
+    if(histSelMode){ d.classList.toggle('hsel', histSel.has(h.id));
+      const mark=document.createElement('div'); mark.className='hmark'; mark.textContent='✓';
+      if(!histSel.has(h.id)) mark.style.opacity='0';
+      d.appendChild(mark);
+      d.onclick=()=>{ if(histSel.has(h.id)) histSel.delete(h.id); else histSel.add(h.id); renderHistory(); updateHistSelBar(); };
+      box.appendChild(d); return;
+    }
     const thumb=(h.images||[])[0]; if(thumb){ const img=document.createElement('img'); img.src=thumb.url; d.appendChild(img); }
     const meta=document.createElement('div'); meta.className='meta';
     const s=document.createElement('span'); s.textContent=(h.model||'').split('-').slice(0,2).join('-');

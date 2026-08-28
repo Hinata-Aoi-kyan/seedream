@@ -606,6 +606,15 @@ def del_history(gid):
         except Exception: pass
     return {"ok": True}
 
+def del_history_many(ids):
+    n = 0
+    for gid in (ids or []):
+        try:
+            del_history(gid); n += 1
+        except Exception:
+            pass
+    return {"ok": True, "deleted": n}
+
 # ---------- HTTP ----------
 class H(BaseHTTPRequestHandler):
     server_version = "SeedreamWeb/1.0"
@@ -675,6 +684,9 @@ class H(BaseHTTPRequestHandler):
                 key = load_keys().get(body.get("provider"))
                 if not key: raise ValueError(f"请先在设置里填写 {body.get('provider')} 的 API Key")
                 self._send(200, describe_image(body["provider"], body["chat_model"], key, body.get("refs") or [], body.get("prompt"), body.get("ref_roles")))
+            elif path == "/api/history/batch":
+                ids = body.get("ids") or [] if isinstance(body, dict) else []
+                self._send(200, del_history_many(ids))
             elif path == "/api/generate":
                 task_id = uuid.uuid4().hex
                 with _jobs_lock: _jobs[task_id] = {"_status": "pending"}
