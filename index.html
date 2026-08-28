@@ -702,7 +702,7 @@ function viewImage(src){
     +'<button class="btn small" onclick="lbZoom(1.4)">+ 放大</button>'
     +'<button class="btn small" onclick="lbZoom(0.7)">- 缩小</button>'
     +'<button class="btn small" onclick="lbReset()">重置</button>'
-    +'<button class="btn small" onclick="document.getElementById('lightbox').remove()">关闭</button></div>';
+    +'<button class="btn small" onclick="lbClose()">关闭</button></div>';
   lbImg=document.getElementById('lbImg');
   // 滚轮缩放
   v.onwheel=e=>{ e.preventDefault(); lbZoom(e.deltaY<0?1.15:0.87); };
@@ -852,7 +852,7 @@ async function detect(key){
 async function testConn(key){
   const base=document.getElementById('pbase_'+key).value.trim();
   const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
-  const model=(CONFIG[key].chat_models||[])[0]?.id || null;
+  const model=((CONFIG[key].chat_models||[])[0] && (CONFIG[key].chat_models||[])[0].id) || null;
   const box=document.getElementById('det_'+key); box.classList.remove('hide'); box.innerHTML='<div class="small-note"><span class="spin"></span>正在测试连接…</div>';
   try{ const r=await jpost('/api/test',{provider:key,base_url:base,api_key:api||undefined,model:model||undefined});
     const ok=/模型可调用/.test(r.message);
