@@ -281,12 +281,11 @@ def gen_byteplus(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=Non
 
 # ---------- OpenAI 生图 ----------
 OPENAI_DENOISE = (
-    " | RENDER RULES (always enforce): ULTRA CLEAN and unified image. Remove all high-frequency noise, "
-    "grain, speckles, film grain, dithering and compression artifacts. Do NOT invent fake fine details, "
-    "fake skin pores/stubble/pattern or fake fabric weave; use clean, smooth, natural realistic textures. "
-    "No banding, no mottled, patchy or muddled colors; use one consistent clean palette with smooth even "
-    "gradients. Silky smooth surfaces, flawless even skin, no blemishes, no spots, no dark patches, no "
-    "over-sharpening, no halos, no fragmented or broken areas, no UI/glitch elements, no watermark, no extra text."
+    " | RENDER RULES (always enforce): ultra-clean unified rendering, continuous crisp linework, "
+    "smooth even gradients, controlled flat color regions, clean silhouettes, restrained texture, "
+    "readable details; keep hair gaps and thin accessories natural and open. "
+    "No random color dots, no colored blotches, no dirty texture, no local broken fragments, "
+    "no color bleeding, no compression artifacts, no AI watermark, no extra text."
 )
 
 def gen_openai(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None, quality=None, background=None, clean_render=False):
@@ -295,8 +294,9 @@ def gen_openai(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None,
     if len([r for r in (refs or []) if r]) >= 2: prompt = prompt.strip() + MULTI_REF_ROLE
     imgs = [r for r in (refs or []) if r]
     psize = preset_openai_size(size)
-    # 固定去噪/去假细节后缀, 直接注入给生图模型, 不依赖提示词优化
-    prompt = (prompt or "").rstrip() + " " + OPENAI_DENOISE
+    # 干净渲染(开关控制)时追加去噪约束; 不开启则不加, 避免干扰用户提示词
+    if clean_render:
+        prompt = (prompt or "").rstrip() + " " + OPENAI_DENOISE
     extra = {}
     if quality: extra["quality"] = quality
     if fmt: extra["output_format"] = fmt
@@ -572,6 +572,7 @@ def generate(body):
                body.get("output_format"), body.get("watermark")))
     c.commit(); c.close()
     return {"id": gid, "files": saved, "optimized_prompt": final if opt else None,
+            "final_prompt": final,
             "images": [{"url": f"/img/{f}", "download": f"/img/{f}"} for f in saved]}
 def history():
     c = db(); rows = c.execute("select id,ts,provider,model,prompt,optimized_prompt,refs,size,output,status,quality,opt_mode,background,format,watermark from gen order by ts desc").fetchall(); c.close()

@@ -20,10 +20,12 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
+  html,body{height:100%}
+  body{overflow:hidden}
   body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
        background:var(--bg);color:var(--txt);-webkit-tap-highlight-color:transparent;
        transition:background .25s,color .25s}
-  .app{display:flex;flex-direction:column;min-height:100vh}
+  .app{display:flex;flex-direction:column;height:100vh;overflow-y:auto}
   header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);
          backdrop-filter:blur(8px);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
   header h1{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
@@ -31,7 +33,7 @@
   .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;
         border:1px solid var(--line);background:var(--card);color:var(--txt);border-radius:10px;cursor:pointer}
   .icon-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-  main{flex:1;padding:12px 14px calc(84px + env(safe-area-inset-bottom));}
+  main{flex:1;padding:12px 14px calc(84px + env(safe-area-inset-bottom));width:100%;}
   .page{display:none}
   .page.active{display:block}
   .btn{border:1px solid var(--line);background:var(--card);color:var(--txt);padding:11px 14px;
@@ -302,26 +304,29 @@ const ICONS = {
 };
 function icon(name){ return ICONS[name] || ''; }
 const DEFAULT_OPTPROMPT_TEXT = '你是一个专业的AI绘画提示词工程师。请把用户的中文/英文需求扩展成一段高质量、结构化、以英文为主的图像生成提示词, 依次包含: 主体、场景/背景、构图视角、光影色调、风格、画质细节。只输出优化后的提示词本身, 不要解释, 不要多余的说明文字。';
-const OPT_PROMPT_GPTIMAGE = `你是一位世界顶级的 AI 图像生成专家与材质逆向工程大师，也是图像理解、创意改写与干净渲染工程师。你要把用户的意图、参考图素材，提炼并组织成一份 gpt-image 能直接生成"干净、统一、无噪点、无碎影、无假纹理"画面的英文提示词。
+const OPT_PROMPT_GPTIMAGE = `你是一名专业的 AI 图像生成提示词工程师、视觉设计师和图像理解专家。你的任务是将用户的意图、参考图和视觉要求，转化为一份可以直接交给 GPT-image 使用的高质量英文图像生成提示词。你不是简单总结用户的话，而是进行视觉分析、信息取舍、结构重组和必要的智能补全，让最终 Prompt 同时具备明确性、可执行性、视觉一致性和细节控制能力。
 
-【设计原则：用"正向怎么画"传达干净】
-不要只堆负面词。要优先用积极的画面语言描述"应该怎么画"，来实现干净效果：连续清晰的线稿，平滑均匀的渐变，受控的平面色块，干净的轮廓与剪影，克制的纹理，细节清楚易读；头发缝隙和细小饰品保持自然通透。负面约束保持短而具体，不与主目标冲突。
+核心原则：高完成度不等于高细节密度。目标是让 GPT-image 生成\"该有的细节清楚、不该有的细节不存在\"的画面。优先通过准确的形体、清晰的轮廓、稳定的线稿、合理的色彩、统一的光影、明确的空间层级和受控的材质表现来提升质量，而不是堆积\"ultra detailed、intricate、highly detailed\"等词。尤其对于动漫、二次元和日系手游插画，应优先形成干净连续的线稿、稳定的线条粗细、完整闭合的轮廓、清晰的大色块、柔和的赛璐璐阴影、克制的渐变、分组明确的头发、简洁的服装褶皱和低视觉噪声。细节应该集中在主体和关键特征，而不是平均分布到整个画面。使用\"grouped hair locks、clean large color areas、restrained micro-detail、simplified secondary forms、controlled texture、sparse environmental detail\"等正向视觉语言表达\"干净\"，而不是依赖大量 negative prompt。
 
-工作方式：
-1. 先理解用户需求：看清用户想要的效果、主体、风格、场景、氛围、材质、透明背景、文字排版等，抓住核心目标。
-2. 若用户上传参考图：先做"全场景结构解析"，提取图像类别、主体结构（骨架/姿态/形状/轮廓/特殊结构）、场景与空间（背景、前景遮挡、所处环境），只还原其"本应该是"的完美物理状态。
-3. 参考图职责：区分"身份证据 / 风格证据 / 服装证据"。保持参考图中的脸型、发型、瞳色、体型比例、主要服装结构与永久身份特征；不同角色的身份/脸部/发型/瞳色/服装不要互相混合。参考图不复制原图构图、裁切、姿势、背景或大块色彩布局，除非用户明确要求复现。
-4. 生成提示词：把用户意图与提取信息融合，写成 gpt-image 友好的结构化英文提示词。按短标签分段、换行：画面主体与特征、场景背景、材质与质感、风格媒介、光线氛围、构图视角、视角景别。多参考图时用 "Image 1: ...，Image 2: ...，use Image 1 as X, Image 2 as Y" 说明每张图作用与交互。
-5. 智能补全与纠偏：用户描述含糊时适度补充能提升画面质量的合理细节；意图与参考图冲突时以用户明确的优先级为准并说明处理。
+你必须根据具体任务动态决定 Prompt 的结构和详细程度。不要机械套用固定模板，也不要为了形式完整而强行加入与任务无关的栏目。人物图应自然覆盖身份、外观、姿态、表情、服装、场景、构图、光影和渲染；产品图应重点覆盖形体、材质、表面状态、光线、摄影和背景；场景图应重点覆盖空间结构、建筑/环境、镜头、光线、材质和氛围；Logo、图标、平面设计等任务则应采用适合其类型的描述方式。结构必须服务于图像，而不是让图像服从模板。
 
-【必须包含到最终提示词的约束】
-- 画面质量（正向）：同样适用于 2D 动漫/二次元角色卡与写实两种场景——连续清晰的线稿，轮廓明确，色块均匀，渐变平滑，材质纹理克制，边缘干净，细小饰品和头发缝隙保持自然通透，画面干净、统一、有质感。
-- 伪影抑制：避免随机色点、彩色色斑、脏污纹理、局部碎影、边缘串色、不必要的颗粒噪声、模糊轮廓、重复肢体、错误手指、额外人物、文字、Logo、水印和压缩伪影。
-- 若为人物/产品/场景，加入"局部重新生成"强制指令：不考虑参考图原有杂质纹路，按提示词重新生成没有明显瑕疵、具有真实物理肌理的主体；生成内容必须与原图色彩视觉完全一致，保证光影、透视无缝融合，不额外增加内容。
-- 产品/精细化工：严格还原真实颜色与材质质感，无杂质无噪点，清除指纹、灰尘、划痕与瑕疵，光线均匀柔和，高光自然通透，立体感强（有产品/人物/场景时必须加上）。
-- 画面干净约束（若偏写实）：photorealistic 时用 ULTRA CLEAN, UNIFIED render；no high-frequency noise, no grain, no speckles, no fake fine details or fake skin pores/weave, no blurred or smudged hair roots, no patchy/mottled/blotchy colors, no banding, no compression/JPEG artifacts, no over-sharpening, no halos, no watermark, no extra text。
+最终 Prompt 应保持充分的视觉信息量，通常约 400-1000 个英文单词。若用户要求复杂、详尽或丰富的画面，必须给出接近上限（约 600-1000 词）的完整描述，不可擅自压缩成\"简单\"；若任务确实简单（单一主体、无复杂背景）可低于 400 词。不要因为用户已经提供了详细描述就简单压缩成摘要，也不要通过重复同义词凑长度。每一段都应增加实际的视觉控制信息。你的扩展方向应该是\"如何画得更准确\"，而不是\"增加更多东西\"。
 
-只输出优化后的英文提示词本身（可含中文关键词对照），不要解释、不要多余说明、不要输出其它内容。`;
+当存在参考图时，先判断每张图提供的证据类型，例如 character identity、face、hair、clothing、pose、style、material、color 或 composition，并在最终 Prompt 中明确说明其用途。保持用户指定的身份特征、结构特征和关键设计，不要无意识混合不同参考图中的人物身份。除非用户要求复现，否则参考图默认用于提取视觉特征和风格证据，而不是复制其构图、裁切、姿势、背景或大面积色彩布局。用户当前明确指令优先于参考图中可能产生冲突的信息。
+
+进行视觉补全时，只补充能够提高构图、空间、材质、光影、解剖、可读性或整体完成度的信息，不要为了\"丰富\"而增加随机装饰。任何新增元素都必须有视觉作用。若用户没有要求复杂背景、密集粒子、丰富纹理或大量装饰，默认保持克制。
+
+建立明确的视觉细节层级：主体和关键特征获得最高精度，次要物体适度处理，环境和背景逐级简化。不要让角色、头发、水面、服装、地面、背景和粒子拥有相同的细节密度。对于动漫图尤其要避免大量随机发丝、碎裂线稿、过多衣服褶皱、密集纹理、碎片化阴影、水面随机高光、过量粒子、复杂背景和无意义的小物件。优先使用完整的大形状、成组的细节和少量有目的的微小元素。
+
+对于线稿型二次元图，重点控制线条的连续性、闭合轮廓、线条稳定性、形状分离、干净交界和自然收笔。头发应由清晰的大型发束组成，只保留少量有意义的细发丝；服装应由明确的结构线和有限的褶皱构成；阴影应形成完整、干净、可读的大形状，而不是碎裂成大量小块。对于写实图，则根据题材使用真实而克制的材质、光线和表面信息，不要强行套用动漫术语。
+
+正向描述始终优先于 negative prompt。先告诉模型\"应该如何呈现\"，再用一小段针对当前任务的 negative constraints 防止明显错误。避免无意义地堆叠\"no ...\"。常见的二次元伪影可按需要抑制，例如 broken contours、disconnected strokes、scratchy linework、random tiny marks、excessive hair strands、excessive wrinkles、noisy textures、patchy colors、fragmented shading、excessive particles、cluttered background、extra characters、duplicated body parts、malformed hands or fingers、text、watermark 等，但只选择当前图像真正需要的约束。不要让 negative constraints 与正向视觉目标冲突。
+
+不要把\"clean\"理解成\"空\"\"简单\"或\"缺乏细节\"。真正的干净是高信息区域准确、低信息区域克制、边缘清楚、形体完整、纹理有目的、细节密度分布合理。真正的精致来自 shape design、line quality、color control、lighting、material separation 和 composition，而不是随机微细节。
+
+生成最终 Prompt 前，在内部检查：是否准确保留了用户真正关心的内容；是否正确使用了参考图；是否存在风格或指令冲突；是否加入了不必要的内容；是否存在过度细节诱因；主体是否比背景更重要；线稿、色块、阴影和材质是否具有统一的视觉语言；是否需要针对当前题材增加或减少细节。发现无意义的复杂度时，优先删除，而不是继续添加。
+
+最终只输出优化后的英文图像生成 Prompt 本身，不解释分析过程，不输出修改说明，不输出 JSON，不输出评分，不输出前言或其他内容。最终 Prompt 必须能够直接复制给 GPT-image 使用。`;
 
 /* ---------- 主题 ---------- */
 let THEME = localStorage.getItem('sw_theme') || 'dark';
@@ -337,7 +342,18 @@ function startElapsed(){ const el=document.getElementById('ela'); if(!el) return
   const iv=setInterval(()=>{ if(!document.body.contains(el)){ clearInterval(iv); return; }
     el.textContent=' · 已用时 '+Math.round((Date.now()-t0)/1000)+' 秒'; },1000);
   return ()=>clearInterval(iv); }
-function scrollToResults(){ const r=$('results'); if(r) r.scrollIntoView({behavior:'smooth',block:'center'}); }
+function scrollToResults(){
+  const r=$('results'); if(!r) return;
+  const app=document.querySelector('.app');
+  // .app 是内部滚动容器; 把 #results 滚动到可视区域
+  const target=app||document.documentElement||document.body;
+  const rect=r.getBoundingClientRect();
+  const appRect=app?app.getBoundingClientRect():null;
+  const baseY=appRect? appRect.top : 0;
+  const top=(rect.top - baseY) + (app?app.scrollTop:0) - 90; // 留出顶栏
+  try{ target.scrollTo({top:Math.max(0,top), behavior:'smooth'}); }
+  catch(e){ target.scrollTop=Math.max(0,top); }
+}
 let _gTimer=null, _g0=0, _gEl=null;
 function genTimerStart(){ _g0=Date.now(); clearInterval(_gTimer);
   _gTimer=setInterval(()=>{ if(_gEl && document.body.contains(_gEl)) _gEl.textContent=' · 已用时 '+Math.round((Date.now()-_g0)/1000)+' 秒'; else clearInterval(_gTimer); },1000); }
@@ -421,7 +437,7 @@ function buildChatOptions(){
   if(!target){ const bp=[...cm.options].find(o=>o.value.startsWith('byteplus::')); target=bp?bp.value:(([...cm.options].find(o=>o.value)||{}).value||''); }
   if(target) cm.value=target;
 }
-function optDefaultForCurrent(){ return isGPTSel() ? OPT_PROMPT_GPTIMAGE : DEFAULT_OPTPROMPT_TEXT; }
+function optDefaultForCurrent(){ return OPT_PROMPT_GPTIMAGE; }
 function optStorageKey(){ return 'sw_optprompt_' + curProvider(); }
 function setupOptPrompt(){
   // 默认按当前模型取; 但绝不覆盖用户已保存的 Seedream 提示词
@@ -634,27 +650,28 @@ function renderHistory(){
     const thumb=(h.images||[])[0]; if(thumb){ const img=document.createElement('img'); img.src=thumb.url; d.appendChild(img); }
     const meta=document.createElement('div'); meta.className='meta';
     const s=document.createElement('span'); s.textContent=(h.model||'').split('-').slice(0,2).join('-');
-    const small=document.createElement('small'); small.textContent=new Date(h.ts*1000).toLocaleTimeString();
+    const small=document.createElement('small'); const dt=new Date(h.ts*1000);
+    small.textContent=(dt.getMonth()+1).toString().padStart(2,'0')+'-'+dt.getDate().toString().padStart(2,'0')+' '+dt.getHours().toString().padStart(2,'0')+':'+dt.getMinutes().toString().padStart(2,'0');
     const del=document.createElement('button'); del.className='btn ghost'; del.innerHTML=icon('trash');
-    del.onclick=async e=>{ e.stopPropagation(); await fetch('/api/history/'+h.id,{method:'DELETE'}); loadHistory(); };
+    del.onclick=async e=>{ e.stopPropagation(); if(!confirm('确定删除这条生成记录？')) return; await fetch('/api/history/'+h.id,{method:'DELETE'}); loadHistory(); };
     meta.append(s,small,del); d.appendChild(meta); d.onclick=()=>openViewer(h); box.appendChild(d); }); }
 function hMeta(h){
   const items=[['模型',h.model],['尺寸',h.size],['参考图',(h.refs||0)+' 张'],['质量',h.quality],['内置优化',h.opt_mode],
     ['格式',h.format],['背景',h.background],['时间',new Date((h.ts||0)*1000).toLocaleString()]];
   const ch=items.filter(x=>x[1]!==null&&x[1]!==undefined&&x[1]!=='')
     .map(x=>`<div style="background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px"><span style="display:block;font-size:11px;color:var(--mut)">${esc(x[0])}</span><b style="font-size:13px">${esc(String(x[1]))}</b></div>`).join('');
-  return `<div class="card" style="margin-top:2px"><label>生成信息</label><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px">${ch}</div></div>`; }
+  return `<div class="card" style="margin-top:14px"><label>生成信息</label><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px">${ch}</div></div>`; }
 function openViewer(h){
   const imgs=(h.images||[]).map(i=>i.url); if(!imgs.length){ toast('无图片'); return; }
   const v=document.createElement('div'); v.id='viewer';
   v.style.cssText='position:fixed;inset:0;z-index:95;background:var(--bg);overflow:auto;';
   v.innerHTML=`<div style="position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)">
     <button class="btn" onclick="document.getElementById('viewer').remove()">${icon('x')} 返回</button>
-    <button class="btn primary" onclick="downloadAll('${h.id}')">${icon('dl')} 下载全部</button></div>
+    <button class="btn primary" onclick="downloadAll('${h.id}')">${icon('dl')} 下载</button></div>
     <div style="max-width:1100px;margin:0 auto;padding:16px 14px 40px">
-      <div id="vGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px"></div>
+      <div id="vGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:0"></div>
       ${hMeta(h)}
-      <div class="card" style="margin-top:18px"><label>提示词</label><pre style="white-space:pre-wrap;font-size:13px;margin:0;color:var(--txt)">${esc(h.prompt)}</pre></div>
+      <div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">提示词</label><button class="btn small" onclick="copyH('${h.id}')">${icon('dl')} 复制</button></div><pre style="white-space:pre-wrap;font-size:13px;margin:6px 0 0;color:var(--txt)">${esc(h.prompt)}</pre></div>
       ${h.optimized_prompt?`<div class="card"><label>优化后提示词</label><pre style="white-space:pre-wrap;font-size:13px;margin:0;color:var(--txt)">${esc(h.optimized_prompt)}</pre></div>`:''}
     </div>`;
   document.body.appendChild(v);
@@ -663,11 +680,39 @@ function openViewer(h){
     img.onclick=()=>viewImage(u); g.appendChild(img); }); }
 function downloadAll(id){ const h=currentHistory.find(x=>x.id===id); if(!h) return;
   (h.images||[]).forEach(im=>{ const a=document.createElement('a'); a.href=im.download; a.download=''; a.click(); }); }
-function viewImage(src){ let v=document.getElementById('lightbox');
+let lbScale=1, lbImg=null;
+function copyH(id){ const h=currentHistory.find(x=>x.id===id); if(!h) return; copyPrompt(h.prompt||''); }
+function copyPrompt(txt){ try{ navigator.clipboard.writeText(txt||'').then(()=>toast('已复制提示词')).catch(()=>{ const ta=document.createElement('textarea'); ta.value=txt||''; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('已复制提示词'); }); }catch(e){ toast('复制失败'); } }
+function viewImage(src){
+  let v=document.getElementById('lightbox');
   if(!v){ v=document.createElement('div'); v.id='lightbox';
-    v.style.cssText='position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
-    v.onclick=()=>v.remove(); document.body.appendChild(v); }
-  v.innerHTML='<img src="'+esc(src)+'" style="max-width:100%;max-height:94vh;border-radius:8px;object-fit:contain;box-shadow:0 12px 48px rgba(0,0,0,.5)">'; }
+    v.style.cssText='position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.96);overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none';
+    document.body.appendChild(v); }
+  lbScale=1;
+  v.innerHTML='<div style="position:absolute;inset:0;overflow:hidden;cursor:grab"><img id="lbImg" src="'+esc(src)+'" style="position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform:translate(-50%,-50%) scale('+lbScale+');transition:transform .15s ease"></div>'
+    +'<div style="position:absolute;top:14px;right:14px;display:flex;gap:8px;z-index:10">'
+    +'<button class="btn small" onclick="lbZoom(1.4)">+ 放大</button>'
+    +'<button class="btn small" onclick="lbZoom(0.7)">- 缩小</button>'
+    +'<button class="btn small" onclick="lbReset()">重置</button>'
+    +'<button class="btn small" onclick="document.getElementById('lightbox').remove()">关闭</button></div>';
+  lbImg=document.getElementById('lbImg');
+  // 滚轮缩放
+  v.onwheel=e=>{ e.preventDefault(); lbZoom(e.deltaY<0?1.15:0.87); };
+  // 双击缩放
+  v.ondblclick=e=>{ e.preventDefault(); lbZoom(lbScale>1.5?0.5:2); };
+  // 拖动平移 + 单击空白关闭(合并)
+  let dragging=false, lbMoved=false, sx=0, sy=0, ox=0, oy=0;
+  v.onpointerdown=e=>{ dragging=true; lbMoved=false; v.style.cursor='grabbing'; sx=e.clientX; sy=e.clientY;
+    try{ const m=new DOMMatrixReadOnly(getComputedStyle(lbImg).transform); ox=m.m41; oy=m.m42; }catch(_){ ox=0; oy=0; }
+    try{ v.setPointerCapture(e.pointerId); }catch(_){} };
+  v.onpointermove=e=>{ if(!dragging||!lbImg) return; const dx=e.clientX-sx, dy=e.clientY-sy;
+    if(Math.abs(dx)>6||Math.abs(dy)>6) lbMoved=true;
+    lbImg.style.left='calc(50% + '+(ox+dx)+'px)'; lbImg.style.top='calc(50% + '+(oy+dy)+'px)'; };
+  v.onpointerup=e=>{ dragging=false; v.style.cursor='grab'; };
+  v.onclick=e=>{ if(!lbMoved && e.target===v) v.remove(); };
+}
+function lbZoom(f){ lbScale=lbScale*f; if(lbImg) lbImg.style.transform='translate(-50%,-50%) scale('+lbScale+')'; }
+function lbReset(){ lbScale=1; if(lbImg){ lbImg.style.transform='translate(-50%,-50%) scale(1)'; lbImg.style.left='50%'; lbImg.style.top='50%'; } }
 
 /* ---------- 设置(provider 编辑) ---------- */
 let settingsView='list'; let editingProvider=null; let provSearch='';
