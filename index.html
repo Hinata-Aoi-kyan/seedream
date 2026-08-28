@@ -484,7 +484,17 @@ function renderModelOptions(){
   const box=$('modelOptions'); const p=$('provider').value;
   if(p==='byteplus'){
     box.innerHTML=`<div class="row" style="margin-top:10px">
-      <div><label>尺寸</label><select id="size"><option value="1.5K" selected>1.5K（默认推荐）</option><option value="2K">2K（更清晰，较慢）</option><option value="1K">1K（最快）</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="3:4">3:4</option></select></div>
+      <div><label>尺寸</label><select id="size">
+        <option value="1.5K" selected>1.5K（默认推荐）</option>
+        <option value="2K">2K（更清晰，较慢）</option>
+        <option value="1K">1K（最快）</option>
+        <option value="1280x720">1280x720（16:9）</option>
+        <option value="720x1280">720x1280（9:16）</option>
+        <option value="1280x1280">1280x1280（1:1）</option>
+        <option value="1600x1600">1600x1600（1:1 清晰）</option>
+        <option value="2048x1024">2048x1024（宽幅）</option>
+        <option value="1024x2048">1024x2048（竖幅）</option>
+      </select></div>
       <div><label>生图内置优化</label><select id="optMode"><option value="standard" selected>standard（默认，慢而好）</option><option value="fast">fast（更快，质量略降）</option></select></div>
     </div>`;
   } else {

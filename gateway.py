@@ -268,8 +268,18 @@ def optimize_prompt(provider, chat_model, prompt, key, sys_prompt=None, refs=Non
 def _is_sensitive_error(data):
     t = json.dumps(data, ensure_ascii=False)
     return ("SensitiveContentDetected" in t) or ("PolicyViolation" in t) or ("SensitiveContent" in t)
+def _seed_size_ok(size):
+    if size in ('1K','1.5K','2K','auto'): return True
+    import re as _re
+    return bool(_re.fullmatch(r'\d+\s*x\s*\d+', str(size or '')))
 def gen_byteplus(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None, clean_render=False, retried=False):
     url = f"{p['base_url']}/images/generations"
+    # 规范化 size: 非K档且非WxH 时映射为合法值(1024x1024), 避免 16:9 这类非法
+    if not _seed_size_ok(size):
+        m = str(size or '').lower()
+        mapping = {'16:9':'1280x720','9:16':'720x1280','1:1':'1280x1280','3:4':'960x1280','4:3':'1280x960'}
+        size = mapping.get(m, '1024x1024')
+
     if clean_render: prompt = prompt.strip() + CLEAN_RENDER_PROMPT
     if len([r for r in (refs or []) if r]) >= 2: prompt = prompt.strip() + MULTI_REF_ROLE
     body = {"model": model, "prompt": prompt, "size": size, "output_format": fmt,
