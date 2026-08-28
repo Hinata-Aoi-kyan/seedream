@@ -21,11 +21,11 @@
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   html,body{height:100%}
-  body{overflow:hidden}
+  body{min-height:100vh;background:var(--bg)}
   body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
        background:var(--bg);color:var(--txt);-webkit-tap-highlight-color:transparent;
        transition:background .25s,color .25s}
-  .app{display:flex;flex-direction:column;height:100vh;overflow-y:auto}
+  .app{display:flex;flex-direction:column;min-height:100vh}
   header{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);
          backdrop-filter:blur(8px);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
   header h1{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
@@ -419,7 +419,12 @@ async function init(){
   if(location.hash==='#history') switchTab('history');
 }
 function fillProviders(){ const p=$('provider'); p.innerHTML='';
-  Object.keys(MODELS).filter(k=>CONFIG[k]?CONFIG[k].enabled!==false:true).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=MODELS[k].label||k; p.appendChild(o); });
+  const keys=Object.keys(MODELS).filter(k=>{
+    if(CONFIG[k] && CONFIG[k].enabled===false) return false;
+    const conf=MODELS[k]; if(!conf) return false;
+    return (conf.image_models||[]).length>0;   // 只显示有生图模型的提供方
+  });
+  keys.forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=MODELS[k].label||k; p.appendChild(o); });
   if(!$('provider').value && p.options.length) p.value=p.options[0].value; }
 function onProviderChange(){ const p=$('provider').value, conf=MODELS[p]||{}; if(typeof refreshOptPromptForModel==='function') refreshOptPromptForModel();
   const im=$('imageModel'); im.innerHTML='';
@@ -774,9 +779,9 @@ function toggleProvMenu(key, evt){
   closeProvMenu(); const p=CONFIG[key]; const enabled=p.enabled!==false;
   const m=document.createElement('div'); m.className='provmenu';
   const dis=document.createElement('div'); dis.textContent= enabled?'禁用':'启用';
-  dis.onclick=()=>{ p.enabled = enabled?false:true; closeProvMenu(); renderSettings(); };
+  dis.onclick=async()=>{ p.enabled = enabled?false:true; closeProvMenu(); renderSettings(); try{ await jput('/api/config',CONFIG); toast('已保存'); MODELS=await jget('/api/models'); fillProviders(); }catch(e){ toast('保存失败: '+e.message); } };
   const del=document.createElement('div'); del.className='danger'; del.textContent='删除';
-  del.onclick=()=>{ if(confirm('删除提供方 '+key+' ?')){ delete CONFIG[key]; settingsView='list'; editingProvider=null; closeProvMenu(); renderSettings(); } };
+  del.onclick=async()=>{ if(confirm('删除提供方 '+key+' ?')){ delete CONFIG[key]; settingsView='list'; editingProvider=null; closeProvMenu(); renderSettings(); try{ await jput('/api/config',CONFIG); toast('已删除'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions(); }catch(e){ toast('保存失败: '+e.message); } } };
   m.append(dis,del); document.body.appendChild(m);
   const r=evt.currentTarget.getBoundingClientRect();
   let left=r.right-130; if(left<8) left=8;
@@ -850,7 +855,8 @@ function addModelFromDet(key,type){ const selId = type==='image_models'?'detImg_
 function removeModel(key,type,i){ CONFIG[key][type].splice(i,1); renderSettings(); }
 function addProvider(){ const k='custom'+Date.now(); CONFIG[k]={label:'',base_url:'',image_models:[],chat_models:[]}; settingsView='edit'; editingProvider=k; renderSettings();
   const el=document.getElementById('plabel_'+k); if(el){ el.scrollIntoView({behavior:'smooth'}); el.focus(); } }
-function delProvider(key){ if(!confirm('删除服务方 '+key+' ?')) return; delete CONFIG[key]; settingsView='list'; editingProvider=null; renderSettings(); }
+async function delProvider(key){ if(!confirm('删除提供方 '+key+' ?')) return; delete CONFIG[key]; settingsView='list'; editingProvider=null; renderSettings();
+  try{ await jput('/api/config',CONFIG); toast('已删除并保存'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions(); }catch(e){ toast('保存失败: '+e.message); } }
 async function detect(key){
   const base=document.getElementById('pbase_'+key).value.trim();
   const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
