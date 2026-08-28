@@ -272,7 +272,7 @@
         <div id="histSelBar" class="hide" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px">
           <span id="histSelCount" style="font-size:13px;color:var(--txt);flex:1;white-space:nowrap">已选 0 张</span>
           <button class="btn small" id="histSelAll" type="button">全选</button>
-          <button class="btn small" id="histSelDown" type="button">下载</button>
+          <button class="btn small" id="histSelDown" type="button">保存</button>
           <button class="btn small" id="histSelDel" type="button" style="color:var(--bad)">删除</button>
         </div>
         <select id="histFilter" onchange="histModelFilter=this.value;renderHistory()"
@@ -615,12 +615,22 @@ function clearDraftUI(){
 }
 
 /* ---------- 生成(后台任务+轮询) ---------- */
+async function saveImageFile(url, filename){
+  // 统一保存入口: 网页用 <a download>; APK(Capacitor) 时改为原生写相册/文件
+  try{
+    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem){
+      // 未来 APK: 用 Filesystem/Media 写相册 (封包时实现)
+    }
+  }catch(e){}
+  const a=document.createElement('a'); a.href=url; a.download=filename||''; a.style.display='none'; document.body.appendChild(a); a.click(); setTimeout(function(){ a.remove(); }, 500);
+}
 function renderResults(box, d){ const total=Math.round((Date.now()-_g0)/1000); box.innerHTML='';
   const sum=document.createElement('div'); sum.className='small-note'; sum.style.cssText='margin:0 0 10px;color:var(--acc2)';
   sum.textContent='✓ 生成完成 · 总耗时 '+total+' 秒'; box.appendChild(sum);
   (d.images||[]).forEach(im=>{ const w=document.createElement('div'); w.className='res';
     const img=document.createElement('img'); img.src=im.url; img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url);
-    const a=document.createElement('a'); a.href=im.download; a.download=''; a.innerHTML=icon('dl')+'下载';
+    const a=document.createElement('a'); a.href=im.download; a.download=''; a.innerHTML=icon('dl')+'保存';
+    a.onclick=function(e){ e.preventDefault(); saveImageFile(im.download, 'seedream.png'); };
     w.append(img,a); box.appendChild(w); }); }
 function pollTask(taskId, box, btnAll){
   const iv=setInterval(async ()=>{ try{ const t=await jget('/api/task/'+taskId); const st=t._status;
@@ -698,8 +708,8 @@ function histSelToggleAll(){
   renderHistory();
 }
 function histSelDownload(){
-  var n=0; histSel.forEach(function(id){ var h=currentHistory.find(function(x){ return x.id===id; }); if(h && h.images){ h.images.forEach(function(im){ var a=document.createElement('a'); a.href=im.download; a.download=''; a.click(); n++; }); } });
-  toast('已下载 '+n+' 张');
+  var n=0; histSel.forEach(function(id){ var h=currentHistory.find(function(x){ return x.id===id; }); if(h && h.images){ h.images.forEach(function(im){ saveImageFile(im.download, 'seedream.png'); n++; }); } });
+  toast('已保存 '+n+' 张');
 }
 async function histSelDelete(){
   var ids=Array.from(histSel); if(!ids.length){ toast('未选择'); return; }
@@ -746,7 +756,7 @@ function openViewer(h){
   v.style.cssText='position:fixed;inset:0;z-index:95;background:var(--bg);overflow:auto;';
   v.innerHTML=`<div style="position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)">
     <button class="btn" onclick="document.getElementById('viewer').remove()">${icon('x')} 返回</button>
-    <button class="btn primary" onclick="downloadAll('${h.id}')">${icon('dl')} 下载</button></div>
+    <button class="btn primary" onclick="downloadAll('${h.id}')">${icon('dl')} 保存</button></div>
     <div style="max-width:1100px;margin:0 auto;padding:16px 14px 40px">
       <div id="vGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:0"></div>
       ${hMeta(h)}
@@ -758,7 +768,7 @@ function openViewer(h){
     img.style.cssText='width:100%;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;object-fit:contain;background:#000';
     img.onclick=()=>viewImage(u); g.appendChild(img); }); }
 function downloadAll(id){ const h=currentHistory.find(x=>x.id===id); if(!h) return;
-  (h.images||[]).forEach(im=>{ const a=document.createElement('a'); a.href=im.download; a.download=''; a.click(); }); }
+  (h.images||[]).forEach(im=>{ saveImageFile(im.download, 'seedream.png'); }); }
 let lbScale=1, lbTx=0, lbTy=0, lbMoved=false, lbImg=null;
 function copyH(id){ const h=currentHistory.find(x=>x.id===id); if(!h) return; copyPrompt(h.prompt||''); }
 function copyPrompt(txt){ try{ navigator.clipboard.writeText(txt||'').then(()=>toast('已复制提示词')).catch(()=>{ const ta=document.createElement('textarea'); ta.value=txt||''; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('已复制提示词'); }); }catch(e){ toast('复制失败'); } }
