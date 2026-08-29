@@ -628,11 +628,24 @@ def history():
         imgs=[]
         first_meta={}
         for f in files:
-            if isinstance(f, dict):
-                first_meta=first_meta or f
-                imgs.append({"url": f"/img/{f['file']}", "download": f"/img/{f['file']}", "mb": f.get('mb'), "w": f.get('w'), "h": f.get('h')})
-            else:
-                imgs.append({"url": f"/img/{f}", "download": f"/img/{f}"})
+            fname = f if isinstance(f, str) else f.get('file')
+            mb = f.get('mb') if isinstance(f, dict) else None
+            w = f.get('w') if isinstance(f, dict) else None
+            h = f.get('h') if isinstance(f, dict) else None
+            # 从文件实时读取尺寸/大小兜底(不依赖保存时记录)
+            if (mb is None or not w or not h) and fname:
+                fp = MEDIA / fname
+                if fp.exists():
+                    try:
+                        mb = round(fp.stat().st_size/1024/1024, 2)
+                        import io as _io
+                        from PIL import Image
+                        img = Image.open(_io.BytesIO(fp.read_bytes())); w, h = img.size; img.close()
+                    except Exception:
+                        pass
+            meta = {'file': fname, 'mb': mb, 'w': w, 'h': h}
+            if not first_meta: first_meta = meta
+            imgs.append({"url": f"/img/{fname}", "download": f"/img/{fname}", "mb": mb, "w": w, "h": h})
         out.append({"id": r[0], "ts": r[1], "provider": r[2], "model": r[3], "prompt": r[4],
                     "optimized_prompt": r[5], "refs": r[6], "size": r[7], "status": r[9],
                     "quality": r[10], "opt_mode": r[11], "background": r[12],
