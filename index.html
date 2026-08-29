@@ -126,8 +126,9 @@
   .tabbar button.active{color:var(--acc)}
   /* 设置页 provider 列表(二级) */
   .pcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px;position:relative}
-  .editbar{position:sticky;top:60px;z-index:20;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;background:var(--bg);padding:4px 0}
-  .editbar .icon-btn{box-shadow:none}
+  .editbar{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;justify-content:space-between;align-items:center;gap:10px;height:64px;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--line);box-sizing:border-box}
+  .editbar .icon-btn{box-shadow:none;width:40px;height:40px}
+  .editbar-spacer{height:64px}
 
   .provlist-top{display:flex;gap:8px;margin-bottom:12px}
   .provlist-top input{flex:1;margin:0}
@@ -829,7 +830,7 @@ function lbReset(){ lbScale=1; if(lbImg){ lbImg.style.transform='translate(-50%,
 
 /* ---------- 设置(provider 编辑) ---------- */
 let settingsView='list'; let editingProvider=null; let provSearch='';
-function renderSettings(){ const box=$('provEditor'); box.innerHTML='';
+function renderSettings(){ const hd=document.querySelector('header'); if(hd) hd.style.display=''; const box=$('provEditor'); box.innerHTML='';
   if(settingsView==='edit' && editingProvider && CONFIG[editingProvider]){ box.appendChild(providerEditor(editingProvider)); return; }
   settingsView='list';
   box.appendChild(providerListView());
@@ -877,14 +878,16 @@ function toggleProvMenu(key, evt){
 function closeProvMenu(){ const m=document.querySelector('.provmenu'); if(m) m.remove(); }
 function providerEditor(key){
   const wrap=document.createElement('div');
+  const hd=document.querySelector('header'); if(hd) hd.style.display='none';   // 隐藏主顶栏
   const bar=document.createElement('div'); bar.className='editbar';
   const back=document.createElement('button'); back.className='icon-btn'; back.title='返回提供方列表';
   back.innerHTML='<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>';
-  back.onclick=()=>{ settingsView='list'; editingProvider=null; renderSettings(); };
+  back.onclick=()=>{ settingsView='list'; editingProvider=null; renderSettings(); const hd=document.querySelector('header'); if(hd) hd.style.display=''; };
   const save=document.createElement('button'); save.className='btn primary'; save.textContent='保存';
   save.onclick=()=>saveProvider(key);
   bar.appendChild(back); bar.appendChild(save);
   wrap.appendChild(bar);
+  const sp=document.createElement('div'); sp.className='editbar-spacer'; wrap.appendChild(sp);
   wrap.appendChild(providerCard(key));
   return wrap;
 }
