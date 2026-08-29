@@ -426,7 +426,10 @@ async function init(){
   fillProviders(); dstep('4-providers-filled');
   onProviderChange(); dstep('5-provider-change');
   buildChatOptions(); setupOptPrompt(); dstep('6-opt-setup');
-  restoreDraft(); renderRefs(); loadHistory(); dstep('7-done');
+  restoreDraft();
+  // 恢复检测结果
+  try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf('sw_det_')===0){ var key=k.slice(7); try{ _det[key]=JSON.parse(localStorage.getItem(k)||'[]'); }catch(e){} } }); }catch(e){}
+  renderRefs(); loadHistory(); dstep('7-done');
   $('prompt').addEventListener('input', saveDraftDebounced);
   if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('/sw.js'); }catch(e){} }
   document.getElementById('optSettings').addEventListener('toggle', ()=>{ if(document.getElementById('optSettings').open) buildChatOptions(); });
@@ -759,9 +762,10 @@ function renderHistory(){
     del.onclick=async e=>{ e.stopPropagation(); if(!confirm('确定删除这条生成记录？')) return; await fetch('/api/history/'+h.id,{method:'DELETE'}); loadHistory(); };
     meta.append(s,small,del); d.appendChild(meta); d.onclick=()=>openViewer(h); box.appendChild(d); }); }
 function hMeta(h){
-  const items=[['模型',h.model],['尺寸',h.size],['参考图',(h.refs||0)+' 张'],['质量',h.quality],['内置优化',h.opt_mode],
-    ['格式',h.format],['背景',h.background],['图片大小',(h.img_mb!=null? h.img_mb+' MB':'-')],
-    ['实际尺寸',(h.img_w&&h.img_h? h.img_w+'×'+h.img_h :'-')],
+  const items=[['模型',h.model],['尺寸',h.size],
+    ['图片大小',(h.img_mb!=null? h.img_mb+' MB':'-')],['实际尺寸',(h.img_w&&h.img_h? h.img_w+'×'+h.img_h :'-')],
+    ['参考图',(h.refs||0)+' 张'],['质量',h.quality],['内置优化',h.opt_mode],
+    ['格式',h.format],['背景',h.background],
     ['时间',new Date((h.ts||0)*1000).toLocaleString()]];
   const ch=items.filter(x=>x[1]!==null&&x[1]!==undefined&&x[1]!=='')
     .map(x=>`<div style="background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px"><span style="display:block;font-size:11px;color:var(--mut)">${esc(x[0])}</span><b style="font-size:13px">${esc(String(x[1]))}</b></div>`).join('');
@@ -928,7 +932,8 @@ function modelListBlock(key,type,label){
     </div>`;
 }
 function fillDetDropdown(key){
-  if(!_det[key]){ try{ _det[key]=JSON.parse(localStorage.getItem('sw_det_'+key)||'[]'); }catch(e){ _det[key]=[]; } }
+  try{ var saved=JSON.parse(localStorage.getItem('sw_det_'+key)||'[]'); if(saved && saved.length) _det[key]=_det[key]&&_det[key].length?saved.concat(_det[key].filter(function(x){return saved.indexOf(x)<0;})):saved; }catch(e){}
+  if(!_det[key]) _det[key]=[];
   ['image_models','chat_models'].forEach(type=>{
     const selId = type==='image_models'?'detImg_'+key:'detChat_'+key;
     const sel=document.getElementById(selId); if(!sel) return;
@@ -960,7 +965,7 @@ async function detect(key){
     try{ localStorage.setItem('sw_det_'+key, JSON.stringify(_det[key])); }catch(e){}
     box.innerHTML=_det[key].length
       ? `<div class="small-note">检测到 ${_det[key].length} 个模型，请在下方「生图/文本模型」栏用下拉选择后点「添加」</div>`
-      : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加）')+'</div>');
+      : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加，或用「连接测试」验证）')+'</div>');
     fillDetDropdown(key);
   }catch(e){ box.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; } }
 async function testConn(key){

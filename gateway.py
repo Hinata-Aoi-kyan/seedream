@@ -477,8 +477,9 @@ def detect_models(body):
     if st != 200:
         msg = (data.get("error", {}).get("message") if isinstance(data, dict) and isinstance(data.get("error"), dict) else str(data))[:200] if data else "(无返回)"
         if st in (401, 403):
-            return {"models": [], "unsupported": False,
-                    "message": f"鉴权失败(HTTP {st})：{msg}。请检查：① Base URL 是否为 {base}（不要多加 /v1，应为 .../provider/v1）；② API Key 是否正确、是否在该站点的 API keys 页创建。"}
+            # 生图可用却列模型403/401: 很可能是该中转不开放 /models 或需特殊权限; Key 可能有效
+            return {"models": [], "unsupported": True,
+                    "message": f"未能列出模型(HTTP {st})：{msg}。该接口可能未开放列模型；生图 Key 若可用，请点「连接测试」验证模型连通，或点「手动」添加模型。"}
         return {"models": [], "unsupported": True,
                 "message": f"接口异常(HTTP {st})：{msg}。该中转可能不支持列出模型，或路径不对。"}
     ids = [m.get("id") for m in (data.get("data") or []) if m.get("id")]
