@@ -760,7 +760,9 @@ function renderHistory(){
     meta.append(s,small,del); d.appendChild(meta); d.onclick=()=>openViewer(h); box.appendChild(d); }); }
 function hMeta(h){
   const items=[['模型',h.model],['尺寸',h.size],['参考图',(h.refs||0)+' 张'],['质量',h.quality],['内置优化',h.opt_mode],
-    ['格式',h.format],['背景',h.background],['时间',new Date((h.ts||0)*1000).toLocaleString()]];
+    ['格式',h.format],['背景',h.background],['图片大小',(h.img_mb!=null? h.img_mb+' MB':'-')],
+    ['实际尺寸',(h.img_w&&h.img_h? h.img_w+'×'+h.img_h :'-')],
+    ['时间',new Date((h.ts||0)*1000).toLocaleString()]];
   const ch=items.filter(x=>x[1]!==null&&x[1]!==undefined&&x[1]!=='')
     .map(x=>`<div style="background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px"><span style="display:block;font-size:11px;color:var(--mut)">${esc(x[0])}</span><b style="font-size:13px">${esc(String(x[1]))}</b></div>`).join('');
   return `<div class="card" style="margin-top:14px"><label>生成信息</label><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px">${ch}</div></div>`; }
@@ -926,6 +928,7 @@ function modelListBlock(key,type,label){
     </div>`;
 }
 function fillDetDropdown(key){
+  if(!_det[key]){ try{ _det[key]=JSON.parse(localStorage.getItem('sw_det_'+key)||'[]'); }catch(e){ _det[key]=[]; } }
   ['image_models','chat_models'].forEach(type=>{
     const selId = type==='image_models'?'detImg_'+key:'detChat_'+key;
     const sel=document.getElementById(selId); if(!sel) return;
@@ -954,6 +957,7 @@ async function detect(key){
   const box=document.getElementById('det_'+key); box.classList.remove('hide'); box.innerHTML='<div class="small-note"><span class="spin"></span>检测中…</div>';
   try{ const d=await jpost('/api/detect',{provider:key,base_url:base,api_key:api||undefined});
     _det[key]=d.models||[];
+    try{ localStorage.setItem('sw_det_'+key, JSON.stringify(_det[key])); }catch(e){}
     box.innerHTML=_det[key].length
       ? `<div class="small-note">检测到 ${_det[key].length} 个模型，请在下方「生图/文本模型」栏用下拉选择后点「添加」</div>`
       : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加）')+'</div>');
@@ -962,7 +966,8 @@ async function detect(key){
 async function testConn(key){
   const base=document.getElementById('pbase_'+key).value.trim();
   const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
-  const model=((CONFIG[key].chat_models||[])[0] && (CONFIG[key].chat_models||[])[0].id) || null;
+  const cm=(CONFIG[key].chat_models||[])[0]; const im=(CONFIG[key].image_models||[])[0];
+  const model=(cm&&cm.id) || (im&&im.id) || null;   // 优先文本模型, 没有则用生图模型测连通
   const box=document.getElementById('det_'+key); box.classList.remove('hide'); box.innerHTML='<div class="small-note"><span class="spin"></span>正在测试连接…</div>';
   try{ const r=await jpost('/api/test',{provider:key,base_url:base,api_key:api||undefined,model:model||undefined});
     const ok=/模型可调用/.test(r.message);

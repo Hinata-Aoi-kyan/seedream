@@ -422,16 +422,22 @@ def save_outputs(items, idp):
             blob = http_get(it["url"])
         else:
             blob = base64.b64decode(it.get("b64_json") or "")
-        # 只保存真正的 PNG 成品, 避免中间预览/JSON 页面被当成品
         if i == 0 and not _looks_like_png(blob):
-            # 尝试重新解码为 PNG 或跳过非图片
             if not blob.startswith((b"\xff\xd8\xff", b"GIF8", b"RIFF")):
                 log(f"save_outputs: first item is not an image (len={len(blob)}), skipping")
                 continue
         ext = "png"
         fn = f"{idp}_{i}.{ext}"
         (MEDIA / fn).write_bytes(blob)
-        saved.append(fn)
+        # 记录文件大小(MB)与实际像素
+        w=h=0
+        try:
+            import io as _io
+            from PIL import Image
+            img=Image.open(_io.BytesIO(blob)); w,h=img.size
+        except Exception:
+            pass
+        saved.append({"file": fn, "mb": round(len(blob)/1024/1024, 2), "w": w, "h": h})
     return saved
 
 # ---------- 业务方法 ----------
@@ -601,11 +607,20 @@ def history():
     out = []
     for r in rows:
         files = json.loads(r[8] or "{}").get("files", [])
+        imgs=[]
+        first_meta={}
+        for f in files:
+            if isinstance(f, dict):
+                first_meta=first_meta or f
+                imgs.append({"url": f"/img/{f['file']}", "download": f"/img/{f['file']}", "mb": f.get('mb'), "w": f.get('w'), "h": f.get('h')})
+            else:
+                imgs.append({"url": f"/img/{f}", "download": f"/img/{f}"})
         out.append({"id": r[0], "ts": r[1], "provider": r[2], "model": r[3], "prompt": r[4],
                     "optimized_prompt": r[5], "refs": r[6], "size": r[7], "status": r[9],
                     "quality": r[10], "opt_mode": r[11], "background": r[12],
                     "format": r[13], "watermark": r[14],
-                    "images": [{"url": f"/img/{f}", "download": f"/img/{f}"} for f in files]})
+                    "img_mb": first_meta.get('mb'), "img_w": first_meta.get('w'), "img_h": first_meta.get('h'),
+                    "images": imgs})
     return out
 def del_history(gid):
     c = db(); row = c.execute("select output from gen where id=?", (gid,)).fetchone()
