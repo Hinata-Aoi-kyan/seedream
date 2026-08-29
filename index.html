@@ -408,12 +408,18 @@ function restoreDraft(){ try{ const p=localStorage.getItem('sw_draft_prompt'); i
 function clearDraft(){ try{ localStorage.removeItem('sw_draft_prompt'); localStorage.removeItem('sw_draft_refs'); }catch(e){} }
 
 /* ---------- 页面切换 ---------- */
+var pageScroll={};
 function switchTab(name){
+  var app=document.querySelector('.app');
+  // 保存当前页滚动位置
+  var cur=document.querySelector('.page.active'); if(cur && app){ pageScroll[cur.id]=app.scrollTop; }
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.id==='page-'+name));
   document.querySelectorAll('.tabbar .tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   if(name==='settings') renderSettings();
   if(name==='history') loadHistory();
   if(name==='generate'){ buildChatOptions(); }
+  // 恢复目标页滚动(首次进入=顶)
+  if(app){ app.scrollTop = pageScroll['page-'+name] != null ? pageScroll['page-'+name] : 0; }
 }
 
 /* ---------- 初始化 ---------- */
