@@ -691,6 +691,11 @@ class H(BaseHTTPRequestHandler):
             elif path == "/api/prefs": self._send(200, prefs_get())
             elif path == "/api/settings": self._send(200, settings())
             elif path == "/api/history": self._send(200, history())
+            elif path == "/api/tasks":
+                with _jobs_lock:
+                    running = [{"id": tid, "model": (j.get("body") or {}).get("image_model") or "", "status": j.get("_status")}
+                               for tid, j in _jobs.items() if j.get("_status") in ("pending", "running")]
+                self._send(200, {"running": running})
             elif path.startswith("/api/task/"):
                 tid = path.split("/api/task/")[1]
                 with _jobs_lock: job = _jobs.get(tid)
@@ -726,7 +731,7 @@ class H(BaseHTTPRequestHandler):
                 self._send(200, del_history_many(ids))
             elif path == "/api/generate":
                 task_id = uuid.uuid4().hex
-                with _jobs_lock: _jobs[task_id] = {"_status": "pending"}
+                with _jobs_lock: _jobs[task_id] = {"_status": "pending", "body": body}
                 threading.Thread(target=_run_job, args=(task_id, body), daemon=True).start()
                 self._send(200, {"task_id": task_id})
             elif path == "/api/detect": self._send(200, detect_models(body))

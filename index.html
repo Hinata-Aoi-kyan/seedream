@@ -28,9 +28,9 @@
          backdrop-filter:blur(8px);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
   header h1{font-size:18px;margin:0;display:flex;align-items:center;gap:8px}
   header h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--acc2);display:inline-block}
-  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;text-align:center;line-height:1;width:38px;height:38px;
         border:1px solid var(--line);background:var(--card);color:var(--txt);border-radius:10px;cursor:pointer}
-  .icon-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .icon-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block;margin:auto}
   main{flex:1;padding:12px 14px 120px;width:100%;box-sizing:border-box;}
   .page{display:none}
   .page.active{display:block}
@@ -54,8 +54,8 @@
   /* textarea 右下角拖拽手柄(简洁、可拖) */
   .ta-wrap{position:relative;display:block}
   .ta-wrap textarea{display:block;resize:vertical}
-  .ta-grip{position:absolute;right:3px;bottom:3px;width:16px;height:16px;
-        display:block;cursor:ns-resize;opacity:.35;transition:.15s;pointer-events:none;
+  .ta-grip{position:absolute;right:0;bottom:0;width:28px;height:28px;
+        display:flex;align-items:flex-end;justify-content:flex-end;cursor:ns-resize;opacity:.45;transition:.15s;pointer-events:auto;
         background:
           linear-gradient(135deg, transparent 50%, var(--line) 50%) 100% 100%/7px 7px no-repeat,
           linear-gradient(135deg, transparent 50%, var(--line) 50%) 100% 100%/11px 11px no-repeat;
@@ -213,7 +213,7 @@
             <div class="opt-sub">抑制碎影/色斑/串色/噪点</div>
             <div class="opt-sub">自动追加干净渲染约束、去噪预处理</div>
           </div>
-          <label class="switch"><input type="checkbox" id="cleanRender" checked><span class="slider"></span></label>
+          <label class="switch"><input type="checkbox" id="cleanRender"><span class="slider"></span></label>
         </div>
         <details id="optSettings">
           <summary>提示词优化设置</summary>
@@ -247,7 +247,7 @@
             <div class="opt-sub">Seedream 建议开，GPT 建议关</div>
             <div class="opt-sub">开启后图更小更快，关闭保留细节</div>
           </div>
-          <label class="switch"><input type="checkbox" id="compress" checked><span class="slider"></span></label>
+          <label class="switch"><input type="checkbox" id="compress"><span class="slider"></span></label>
         </div>
         <div class="addbar" style="margin-top:8px;align-items:stretch">
           <input type="text" id="refUrl" placeholder="粘贴图片 URL 添加为参考图" style="flex:1;margin:0">
@@ -700,6 +700,8 @@ async function loadHistory(){ try{ currentHistory=await jget('/api/history'); }c
   }
   renderHistory();
   initHistSelect();
+  renderRunning();
+  startRunningTimer();
 }
 let histSelMode=false; const histSel=new Set();
 function initHistSelect(){
@@ -747,6 +749,22 @@ async function histSelDelete(){
     await loadHistory();
   }catch(e){ toast('删除失败: '+e.message); }
 }
+var _runningTimer=null;
+async function renderRunning(){
+  try{
+    var d=await jget('/api/tasks');
+    var box=document.getElementById('history'); if(!box) return;
+    var old=document.getElementById('runningBox'); if(old) old.remove();
+    var list=d.running||[];
+    if(list.length){
+      var rb=document.createElement('div'); rb.id='runningBox';
+      rb.className='hitem'; rb.style.cssText='grid-column:1/-1;border-style:dashed;display:flex;align-items:center;gap:8px;padding:12px;background:var(--card2)';
+      rb.innerHTML='<span class="spin"></span><span style="font-size:13px;color:var(--txt);flex:1">正在生成…（'+esc(list.length)+' 个任务）</span>';
+      box.insertBefore(rb, box.firstChild);
+    }
+  }catch(e){}
+}
+function startRunningTimer(){ if(_runningTimer) return; _runningTimer=setInterval(renderRunning, 5000); }
 function renderHistory(){
   const box=$('history'); box.innerHTML='';
   const rows=currentHistory.filter(h=>!histModelFilter || h.model===histModelFilter);
