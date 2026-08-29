@@ -611,9 +611,15 @@ def generate(body):
                body.get("quality"), body.get("opt_mode"), body.get("background"),
                body.get("output_format"), body.get("watermark")))
     c.commit(); c.close()
+    imgs_out=[]
+    for f in saved:
+        if isinstance(f, dict):
+            imgs_out.append({"url": f"/img/{f['file']}", "download": f"/img/{f['file']}", "mb": f.get('mb'), "w": f.get('w'), "h": f.get('h')})
+        else:
+            imgs_out.append({"url": f"/img/{f}", "download": f"/img/{f}"})
     return {"id": gid, "files": saved, "optimized_prompt": final if opt else None,
             "final_prompt": final,
-            "images": [{"url": f"/img/{f}", "download": f"/img/{f}"} for f in saved]}
+            "images": imgs_out}
 def history():
     c = db(); rows = c.execute("select id,ts,provider,model,prompt,optimized_prompt,refs,size,output,status,quality,opt_mode,background,format,watermark from gen order by ts desc").fetchall(); c.close()
     out = []
