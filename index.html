@@ -919,7 +919,7 @@ function providerCard(key){
   const pk=card.querySelector('#pkey_'+key); if(pk && keyDraft[key]) pk.value=keyDraft[key];
   renderList(key,'image_models',card.querySelector('#imglist_'+key));
   renderList(key,'chat_models',card.querySelector('#chatlist_'+key));
-  fillDetDropdown(key);
+  fillDetDropdown(key, card);
   return card; }
 function modelListBlock(key,type,label){
   const listId = type==='image_models'?'imglist_'+key:'chatlist_'+key;
@@ -931,12 +931,12 @@ function modelListBlock(key,type,label){
       <button class="btn small" style="flex:none;min-width:64px" onclick="addModel('${key}','${type}')">手动</button>
     </div>`;
 }
-function fillDetDropdown(key){
+function fillDetDropdown(key, card){
   try{ var saved=JSON.parse(localStorage.getItem('sw_det_'+key)||'[]'); if(saved && saved.length) _det[key]=_det[key]&&_det[key].length?saved.concat(_det[key].filter(function(x){return saved.indexOf(x)<0;})):saved; }catch(e){}
   if(!_det[key]) _det[key]=[];
   ['image_models','chat_models'].forEach(type=>{
     const selId = type==='image_models'?'detImg_'+key:'detChat_'+key;
-    const sel=document.getElementById(selId); if(!sel) return;
+    const sel=card?card.querySelector('#'+selId):document.getElementById(selId); if(!sel) return;
     sel.innerHTML='<option value="">（检测后可下拉选择）</option>';
     (_det[key]||[]).forEach(id=>{ const o=document.createElement('option'); o.value=id; o.textContent=id; sel.appendChild(o); });
   });

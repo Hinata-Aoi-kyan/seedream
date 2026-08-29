@@ -494,10 +494,21 @@ def test_connection(body):
     url = base.rstrip("/") + "/models"
     st, data = http_json("GET", url, {"Authorization": f"Bearer {key}"}, None)
     if st != 200:
+        # 列模型失败但可能 Key 有效: 尝试用已有模型发最小请求判断
+        if model:
+            try:
+                st2, d2 = http_json("POST", base.rstrip("/") + "/chat/completions",
+                                    {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                                    {"model": model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
+                                    timeout=60)
+                if st2 == 200:
+                    return {"ok": True, "status": st, "message": f"该接口未开放列模型(HTTP {st})，但模型可调用 ✅ (Key 有效)", "model_count": 0}
+            except Exception:
+                pass
         return {"ok": False, "status": st,
                 "message": f"连接异常(HTTP {st})，请检查 Base URL/Key: {json.dumps(data, ensure_ascii=False)[:160]}"}
     n = len(data.get("data") or [])
-    msg = f"接口连通 · 返回 {n} 个模型"
+    msg = f"连接成功 ✅ (Key 有效) · 返回 {n} 个模型"
     if model:
         try:
             st2, d2 = http_json("POST", base.rstrip("/") + "/chat/completions",
