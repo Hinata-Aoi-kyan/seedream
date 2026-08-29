@@ -126,6 +126,9 @@
   .tabbar button.active{color:var(--acc)}
   /* 设置页 provider 列表(二级) */
   .pcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px;position:relative}
+  .editbar{position:sticky;top:60px;z-index:20;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;background:var(--bg);padding:4px 0}
+  .editbar .icon-btn{box-shadow:none}
+
   .provlist-top{display:flex;gap:8px;margin-bottom:12px}
   .provlist-top input{flex:1;margin:0}
   .provlist-top .btn{flex:none;min-height:44px}
@@ -765,7 +768,7 @@ function openViewer(h){
   const v=document.createElement('div'); v.id='viewer';
   v.style.cssText='position:fixed;inset:0;z-index:95;background:var(--bg);overflow:auto;';
   v.innerHTML=`<div style="position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)">
-    <button class="btn" onclick="document.getElementById('viewer').remove()">${icon('x')} 返回</button>
+    <button class="icon-btn" onclick="document.getElementById('viewer').remove()" style="box-shadow:none;width:40px;height:40px"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
     <button class="btn primary" onclick="downloadAll('${h.id}')">${icon('dl')} 保存</button></div>
     <div style="max-width:1100px;margin:0 auto;padding:16px 14px 40px">
       <div id="vGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:0"></div>
@@ -874,11 +877,14 @@ function toggleProvMenu(key, evt){
 function closeProvMenu(){ const m=document.querySelector('.provmenu'); if(m) m.remove(); }
 function providerEditor(key){
   const wrap=document.createElement('div');
+  const bar=document.createElement('div'); bar.className='editbar';
   const back=document.createElement('button'); back.className='icon-btn'; back.title='返回提供方列表';
-  back.style.cssText='position:sticky;top:60px;z-index:20;margin-bottom:14px;box-shadow:0 4px 12px rgba(0,0,0,.25)';
   back.innerHTML='<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>';
   back.onclick=()=>{ settingsView='list'; editingProvider=null; renderSettings(); };
-  wrap.appendChild(back);
+  const save=document.createElement('button'); save.className='btn primary'; save.textContent='保存';
+  save.onclick=()=>saveProvider(key);
+  bar.appendChild(back); bar.appendChild(save);
+  wrap.appendChild(bar);
   wrap.appendChild(providerCard(key));
   return wrap;
 }
@@ -900,9 +906,7 @@ function providerCard(key){
     <div id="det_${key}" class="det hide"></div>
     ${modelListBlock(key,'image_models','生图模型')}
     ${modelListBlock(key,'chat_models','文本模型')}
-    <div class="addbar" style="justify-content:flex-end;margin-top:12px">
-      <button class="btn primary" onclick="saveProvider('${key}')">保存</button>
-    </div>`;
+`;
   const pk=card.querySelector('#pkey_'+key); if(pk && keyDraft[key]) pk.value=keyDraft[key];
   renderList(key,'image_models',card.querySelector('#imglist_'+key));
   renderList(key,'chat_models',card.querySelector('#chatlist_'+key));
