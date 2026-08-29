@@ -44,6 +44,9 @@
   .btn.ghost svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .btn:disabled{opacity:.55;cursor:not-allowed;pointer-events:none}
   .btn:disabled .spin{border-top-color:var(--acc)}
+  .loader{width:22px;height:22px;border:3px solid color-mix(in srgb,var(--acc) 30%,transparent);border-top-color:var(--acc);border-radius:50%;animation:sp .9s linear infinite;flex:none;display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px}
   label{display:block;font-size:12px;color:var(--mut);margin:10px 0 6px}
   input[type=text],input[type=password],textarea,select{width:100%;background:var(--card2);color:var(--txt);
@@ -55,7 +58,7 @@
   .ta-wrap{position:relative;display:block}
   .ta-wrap textarea{display:block;resize:vertical}
   .ta-grip{position:absolute;right:0;bottom:0;width:28px;height:28px;
-        display:flex;align-items:flex-end;justify-content:flex-end;cursor:ns-resize;opacity:.45;transition:.15s;pointer-events:auto;
+        display:flex;align-items:flex-end;justify-content:flex-end;opacity:.45;transition:.15s;pointer-events:none;
         background:
           linear-gradient(135deg, transparent 50%, var(--line) 50%) 100% 100%/7px 7px no-repeat,
           linear-gradient(135deg, transparent 50%, var(--line) 50%) 100% 100%/11px 11px no-repeat;
@@ -210,8 +213,7 @@
         <div class="toggle" style="margin-top:8px">
           <div style="flex:1">
             <div style="font-size:13px">干净渲染</div>
-            <div class="opt-sub">抑制碎影/色斑/串色/噪点</div>
-            <div class="opt-sub">自动追加干净渲染约束、去噪预处理</div>
+            <div class="opt-sub">抑制碎影/色斑/串色/噪点，自动追加干净渲染约束</div>
           </div>
           <label class="switch"><input type="checkbox" id="cleanRender"><span class="slider"></span></label>
         </div>
@@ -244,8 +246,7 @@
         <div class="toggle" style="margin-top:6px">
           <div style="flex:1">
             <div style="font-size:13px">参考图二次压缩</div>
-            <div class="opt-sub">Seedream 建议开，GPT 建议关</div>
-            <div class="opt-sub">开启后图更小更快，关闭保留细节</div>
+            <div class="opt-sub">开启后参考图更小更快，关闭保留细节</div>
           </div>
           <label class="switch"><input type="checkbox" id="compress"><span class="slider"></span></label>
         </div>
@@ -380,7 +381,7 @@ function genTimerStop(){ clearInterval(_gTimer); _gTimer=null; }
 function genShow(msg){
   const box=$('results');
   box.innerHTML='<div style="grid-column:1 / -1;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)">'
-    +'<span class="spin"></span><span style="flex:1;white-space:nowrap">'+esc(msg)+'</span>'
+    +'<span class="loader"></span><span style="flex:1;white-space:nowrap">'+esc(msg)+'</span>'
     +'<span id="ela" style="flex:none;white-space:nowrap;color:var(--acc);font-variant-numeric:tabular-nums"> · 已用时 0 秒</span></div>';
   scrollToResults(); _gEl=document.getElementById('ela');
   if(_gEl) _gEl.textContent=' · 已用时 '+Math.round((Date.now()-_g0)/1000)+' 秒'; }
@@ -759,7 +760,7 @@ async function renderRunning(){
     if(list.length){
       var rb=document.createElement('div'); rb.id='runningBox';
       rb.className='hitem'; rb.style.cssText='grid-column:1/-1;border-style:dashed;display:flex;align-items:center;gap:8px;padding:12px;background:var(--card2)';
-      rb.innerHTML='<span class="spin"></span><span style="font-size:13px;color:var(--txt);flex:1">正在生成…（'+esc(list.length)+' 个任务）</span>';
+      rb.innerHTML='<span class="loader"></span><span style="font-size:13px;color:var(--txt);flex:1">正在生成…（'+esc(list.length)+' 个任务）</span>';
       box.insertBefore(rb, box.firstChild);
     }
   }catch(e){}
