@@ -428,16 +428,17 @@ def save_outputs(items, idp):
                 continue
         ext = "png"
         fn = f"{idp}_{i}.{ext}"
-        (MEDIA / fn).write_bytes(blob)
-        # 记录文件大小(MB)与实际像素
-        w=h=0
+        fp = MEDIA / fn
+        fp.write_bytes(blob)
+        # 用文件读实际大小与像素(文件存在更可靠; 失败则0)
+        w=h=0; size_mb=0.0
         try:
-            import io as _io
+            size_mb = round(fp.stat().st_size/1024/1024, 2)
             from PIL import Image
-            img=Image.open(_io.BytesIO(blob)); w,h=img.size
+            img=Image.open(fp); w,h=img.size; img.close()
         except Exception:
             pass
-        saved.append({"file": fn, "mb": round(len(blob)/1024/1024, 2), "w": w, "h": h})
+        saved.append({"file": fn, "mb": size_mb, "w": w, "h": h})
     return saved
 
 # ---------- 业务方法 ----------
