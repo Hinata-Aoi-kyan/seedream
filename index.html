@@ -167,6 +167,9 @@
   .mrow .del{width:32px;height:32px;flex:none}
   .det{margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:10px}
   .addbar{display:flex;gap:8px;margin-top:10px;align-items:center}
+  .addbar.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch}
+  .addbar.actions .btn{min-height:44px;white-space:nowrap;padding:7px 8px;overflow:hidden}
+  .addbar.actions .span2{grid-column:1 / -1}
   .small-note{font-size:11px;color:var(--mut);margin-top:6px}
   .toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:var(--card2);
         border:1px solid var(--line);padding:11px 18px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.25)}
@@ -1038,14 +1041,13 @@ function providerCard(key){
     <input type="text" id="pbase_${key}" value="${esc(p.base_url||'')}" placeholder="https://api2.jojocode.com/v1" oninput="CONFIG['${key}'].base_url=this.value">
     <label>API Key</label>
     <input type="password" id="pkey_${key}" placeholder="留空则不修改" oninput="keyDraft['${key}']=this.value">
-    <div class="addbar">
+    <div class="addbar actions">
       <button class="btn small" onclick="detect('${key}')">${icon('search')}检测模型</button>
-      <button class="btn small" onclick="testConn('${key}')">连接测试</button>
-      <button class="btn small" onclick="netDiag('${key}')">网络诊断</button>
-      <button class="btn small" onclick="bgTest('${key}')">透明背景检测</button>
+      <button class="btn small" onclick="diagnose('${key}')">诊断</button>
+      <button class="btn small span2" onclick="bgTest('${key}')">透明背景检测</button>
     </div>
     <div id="det_${key}" class="det hide"></div>
-    <div id="net_${key}" class="det hide"></div>
+    <div id="diag_${key}" class="det hide"></div>
     <div id="bg_${key}" class="det hide"></div>
     ${modelListBlock(key,'image_models','生图模型')}
     ${modelListBlock(key,'chat_models','文本模型')}
@@ -1102,7 +1104,7 @@ async function detect(key){
     try{ localStorage.setItem('sw_det_'+key, JSON.stringify(_det[key])); }catch(e){}
     box.innerHTML=_det[key].length
       ? `<div class="small-note">检测到 ${_det[key].length} 个模型，请在下方「生图/文本模型」栏用下拉选择后点「添加」</div>`
-      : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加，或用「连接测试」验证）')+'</div>');
+      : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加，或用「诊断」验证）')+'</div>');
     fillDetDropdown(key);
   }catch(e){ box.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; } }
 async function bgTest(key){
@@ -1125,48 +1127,84 @@ async function bgTest(key){
       return '<td style="padding:8px 6px;vertical-align:top"><b style="color:'+col+'">'+v+'</b>'+extra+'</td>';
     };
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
-      +'<tr style="text-align:left;color:var(--mut);font-size:12px"><th style="padding:6px">模型</th><th style="padding:6px">文生图</th><th style="padding:6px">图生图(带参考图)</th></tr>';
+      +'<tr style="text-align:left;color:var(--mut);font-size:12px"><th style="padding:6px">模型</th><th style="padding:6px">文生图</th><th style="padding:6px">图生图</th><th style="padding:6px">仅提示词</th></tr>';
     (d.rows||[]).forEach(r=>{
       html+='<tr style="border-top:1px solid var(--line)"><td style="padding:8px 6px;font-size:12px">'+esc(r.model)+'</td>'
-        +okCell(r.text2img)+okCell(r.img2img)+'</tr>';
+        +okCell(r.text2img)+okCell(r.img2img)
+        + (r.prompt_only ? okCell(r.prompt_only) : '<td style="padding:8px 6px;color:var(--mut);font-size:12px">—</td>')
+        +'</tr>';
     });
     html+='</table></div>';
-    const s=d.summary||{};
+    const s=d.summary||{}, total=s.total||0, t2i=s.text2img_ok||0, i2i=s.img2img_ok||0, po=s.prompt_only_ok||0;
+    let concl='';
+    if(total && t2i===0 && i2i===0){
+      const allSame=(d.rows||[]).every(r=>{
+        const e=((r.text2img||{}).error||'')+' '+((r.img2img||{}).error||'');
+        return /not supported/i.test(e);
+      });
+      concl = allSame
+        ? '该中转<b>完全没有实现透明背景</b>：所有模型、两条路径都返回同一条「not supported」。这是中转侧不支持，不是模型能力或参数写法的问题。'
+        : '所有模型都不支持透明背景，可能是该中转未透传 background 参数。';
+      concl += po>0
+        ? ' <b style="color:var(--acc2)">但「仅提示词」方式可行</b>：不传 background 参数、只在提示词里要求透明，也能拿到真透明图 —— 生成时可以试试在提示词里写明「transparent background」。'
+        : ' 「仅提示词」方式也不行，说明该中转输出的是不透明图，想要透明背景需要换支持的中转。';
+    } else if(t2i>0 && i2i===0){
+      concl='文生图支持透明，但带参考图的图生图不支持 —— 中转的 edits 路径未实现透明背景。生成时若带参考图选透明，会自动回退为不透明。';
+    } else if(t2i>0 || i2i>0){
+      concl='部分模型/路径支持透明背景，见上表。不支持的会自动回退为不透明背景。';
+    }
     html+='<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--card2);border:1px solid var(--line);font-size:13px;line-height:1.6">'
-      +'文生图支持 '+esc(String(s.text2img_ok||0))+'/'+esc(String(s.total||0))+' 个模型，图生图支持 '+esc(String(s.img2img_ok||0))+'/'+esc(String(s.total||0))+' 个。'
-      +'<br>「参数被忽略」= 接口返回成功但图里没有透明通道，说明该中转/模型静默忽略了 background 参数。</div>';
+      +'文生图 '+esc(String(t2i))+'/'+esc(String(total))+'，图生图 '+esc(String(i2i))+'/'+esc(String(total))
+      +(po?'，仅提示词 '+esc(String(po))+'/'+esc(String(total)):'')+'。'
+      +(concl?'<br>'+concl:'')
+      +'</div>';
     el.innerHTML=html;
   }catch(e){ el.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; }
 }
-async function netDiag(key){
-  const el=document.getElementById('net_'+key);
+function _chkRow(ok, name, detail, ms){
+  var s='<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0">'
+    +'<span style="flex:none">'+(ok?'✅':'❌')+'</span>'
+    +'<span style="flex:1;font-size:13px">'+esc(name)+'</span>'
+    +(ms!=null?'<small style="flex:none;color:var(--mut)">'+ms+'ms</small>':'')+'</div>';
+  if(detail) s+='<div class="small-note" style="margin:0 0 6px 22px;font-size:12px">'+esc(String(detail))+'</div>';
+  return s;
+}
+function _secTitle(t){ return '<div style="font-size:12px;color:var(--mut);margin:10px 0 2px;font-weight:600">'+esc(t)+'</div>'; }
+
+/* 合并诊断: ① 接口与 Key(连接测试) + ② 网络传输(网络诊断) */
+async function diagnose(key){
+  var el=document.getElementById('diag_'+key);
   if(!el){ toast('找不到诊断容器'); return; }
   el.classList.remove('hide');
-  el.innerHTML='<div class="small-note"><span class="spin"></span>正在测试网络（约需 10~30 秒）…</div>';
+  el.innerHTML='<div class="small-note"><span class="spin"></span>正在诊断：接口与 Key…</div>';
+  var html='';
+  // ① 接口与 Key
+  var baseEl=document.getElementById('pbase_'+key);
+  var keyEl=document.getElementById('pkey_'+key);
+  var base=(baseEl&&baseEl.value||'').trim();
+  var api=((keyDraft[key]||(keyEl&&keyEl.value)||'')+'').trim();
+  var cm=(CONFIG[key].chat_models||[])[0], im=(CONFIG[key].image_models||[])[0];
+  var model=(cm&&cm.id)||(im&&im.id)||null;
+  html+=_secTitle('① 接口与 Key');
   try{
-    const d=await jpost('/api/netdiag',{mb:5},300000);
-    let html='';
-    (d.tests||[]).forEach(t=>{
-      html+='<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0">'
-        + '<span style="flex:none">'+(t.ok?'✅':'❌')+'</span>'
-        + '<span style="flex:1;font-size:13px">'+esc(t.name)+'</span>'
-        + '<small style="flex:none;color:var(--mut)">'+(t.ms||0)+'ms</small></div>';
-      if(t.detail) html+='<div class="small-note" style="margin:0 0 6px 22px;font-size:12px">'+esc(t.detail)+'</div>';
-    });
+    var r=await jpost('/api/test',{provider:key,base_url:base,api_key:api||undefined,model:model||undefined});
+    html+=_chkRow(!!r.ok, '接口连通 / Key 有效', r.message);
+  }catch(e){
+    html+=_chkRow(false, '接口连通 / Key 有效', e.message);
+  }
+  el.innerHTML=html+'<div class="small-note"><span class="spin"></span>正在测网络传输（大流量）…</div>';
+  // ② 网络传输
+  try{
+    var d=await jpost('/api/netdiag',{mb:2,provider:key},300000);
+    html+=_secTitle('② 网络传输（与 Key 无关，测代理/大包）');
+    (d.tests||[]).forEach(function(t){ html+=_chkRow(t.ok, t.name, t.detail, t.ms); });
     if(d.advice) html+='<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--card2);border:1px solid var(--line);font-size:13px;line-height:1.6">'+esc(d.advice)+'</div>';
-    el.innerHTML=html;
-  }catch(e){ el.innerHTML='<div class="small-note">诊断失败: '+esc(e.message)+'</div>'; }
+  }catch(e){
+    html+=_secTitle('② 网络传输（与 Key 无关，测代理/大包）');
+    html+=_chkRow(false, '网络测试', e.message);
+  }
+  el.innerHTML=html;
 }
-async function testConn(key){
-  const base=document.getElementById('pbase_'+key).value.trim();
-  const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
-  const cm=(CONFIG[key].chat_models||[])[0]; const im=(CONFIG[key].image_models||[])[0];
-  const model=(cm&&cm.id) || (im&&im.id) || null;   // 优先文本模型, 没有则用生图模型测连通
-  const box=document.getElementById('det_'+key); box.classList.remove('hide'); box.innerHTML='<div class="small-note"><span class="spin"></span>正在测试连接…</div>';
-  try{ const r=await jpost('/api/test',{provider:key,base_url:base,api_key:api||undefined,model:model||undefined});
-    const ok=/模型可调用/.test(r.message);
-    box.innerHTML='<div class="small-note">'+(ok?'<span style="color:var(--acc2)">✓</span>':'<span style="color:var(--bad)">✗</span>')+' '+esc(r.message)+'</div>';
-  }catch(e){ box.innerHTML='<div class="small-note">测试失败: '+esc(e.message)+'</div>'; } }
 async function saveProvider(key){
   CONFIG[key].label=document.getElementById('plabel_'+key).value.trim()||key;
   CONFIG[key].base_url=document.getElementById('pbase_'+key).value.trim();

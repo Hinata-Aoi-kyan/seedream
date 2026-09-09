@@ -70,21 +70,39 @@ bash manage.sh start        # 状态: bash manage.sh status  停止: bash manage
 
 新增 provider：在设置页「新增提供方」填 Base URL + Key，点「检测模型」下拉选择添加即可，无需改代码。
 
+## 诊断（设置页 → 任选提供方 → 诊断）
+一个按钮跑完两类检查，分两段显示：
+
+| 段 | 检查内容 | 用途 |
+|---|---|---|
+| ① 接口与 Key | 接口连通、Key 有效、模型能否真正调用 | 判断**账号/配置**有没有问题 |
+| ② 网络传输 | 小请求 / 大下载 2MB / 大上传 2MB（不传 Key） | 判断**网络/代理**能不能扛住大流量 |
+
+两者互补：① 失败通常是 Key 或 Base URL 的问题；② 失败通常是 VPN/代理（如 FlClash）破坏大包。
+`BAD_RECORD_MAC` / `DECRYPTION_FAILED` / `EOF occurred` 这类错误基本都出在 ②，与模型无关。
+处理顺序：直接重试（网关已自动重试）→ 换节点/协议 → FlClash TUN MTU 调低到 1400/1280 → 关掉代理的 TLS 分片 → 换小尺寸。
+
+`NET_RETRIES` 可调重试次数。
+
 ## 透明背景（重要）
 透明背景需要 **png/webp**（选 jpeg 会自动改 png）。若该模型/中转不支持，网关会**自动回退为不透明**并在结果区提示。
 
-**不确定你的中转支持到什么程度？** 设置页 → 任选提供方 → **透明背景检测**，会逐个模型试两条路径并给出结论：
+**不确定你的中转支持到什么程度？** 设置页 → 任选提供方 → **透明背景检测**，逐个模型试三条路径：
 
-| 结论 | 含义 |
+| 列 | 含义 |
 |---|---|
-| 支持 ✅ | 返回图带透明通道且确实有透明像素 |
-| 参数被忽略(返回无透明通道) | 接口返回成功，但图里没有 alpha —— 中转/模型**静默忽略了** background 参数 |
-| 有通道但无透明像素 | 有 alpha 通道但内容不透明 |
-| 不支持 | 接口直接报错（如 `Transparent background is not supported for this model`） |
+| 文生图 | 传 `background=transparent` 走 `/images/generations` |
+| 图生图 | 传 `background=transparent` 走 `/images/edits`（带参考图） |
+| 仅提示词 | **不传参数**，只在提示词里要求透明（参数被拒时的绕过办法） |
 
-背景知识：`gpt-image-2` 的透明背景是 **2026-08-20 才以 preview 形式加入**的，且部分第三方中转在
-`/images/edits`（带参考图）路径上会把它转成 Responses API 的 `image_generation` 工具，
-从而出现 `param: tools` 的报错 —— 这属于**中转侧实现**问题，不是参数写法问题。
+判定：`支持 ✅`（有 alpha 且有透明像素）/ `参数被忽略`（成功但无 alpha）/ `有通道但无透明像素` / `不支持`（接口报错）。
+
+底部会自动给结论，例如「该中转完全没有实现透明背景」或「但仅提示词方式可行」。
+
+背景知识：`gpt-image-2` 的透明背景是 **2026-08-20 才以 preview 形式加入**的；部分第三方中转在
+`/images/edits` 路径上会把它转成 Responses API 的 `image_generation` 工具，从而出现 `param: tools`
+的报错 —— 这属于**中转侧实现**问题，不是参数写法问题。若「仅提示词」可行，生成时在提示词里
+写明 `transparent background / PNG with real alpha channel` 即可绕过。
 
 ## 动效与返回手势
 - 页面切换、二级页（设置编辑页、记录详情）、图片查看器、下拉菜单都有过渡动画
@@ -102,7 +120,7 @@ termux-notification --title 测试 --content 通了   # 手动验证
 带按钮失败时会自动回退为纯文字通知；所有发送结果都记在 `server.log`（`notify: 已发送(带按钮)` 等）。
 
 ## 网络诊断(出 SSL/超时错误时先点它)
-设置页 → 任选一个提供方 → **网络诊断**，会依次测：接口可达 → 小请求 → 大下载 → 大上传，并给出结论。
+设置页 → 任选一个提供方 → **诊断**（已把原「连接测试」与「网络诊断」合并）。
 
 `BAD_RECORD_MAC` / `DECRYPTION_FAILED` / `EOF occurred` 这类错误的含义是 **TLS 数据在传输中被破坏**，
 与生图模型无关，典型成因是 VPN/代理(如 FlClash) 传输较大数据包时出错——gpt-image 的响应是整图 base64

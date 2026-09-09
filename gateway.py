@@ -929,23 +929,33 @@ def net_diag(body):
         advice = "结果异常，请把上面的详情发我。"
     return {"tests": tests, "advice": advice}
 
-def _probe_transparent(p, key, model, ref=None):
-    """试一次透明背景请求, 返回 {ok,error,info}."""
+def _probe_transparent(p, key, model, ref=None, mode="param"):
+    """试一次透明背景请求, 返回 {ok,error,info}.
+
+    mode=param   : 传 background=transparent
+    mode=prompt  : 不传 background, 只在提示词里要求透明(看是否有绕过办法)
+    """
     base = p["base_url"]
-    prompt = "a single red circle centered on a plain background, isolated subject, no shadow"
+    if mode == "prompt":
+        prompt = ("a single red circle centered on a fully transparent background, "
+                  "isolated subject, no shadow, no backdrop, PNG with a real alpha channel")
+    else:
+        prompt = "a single red circle centered on a plain background, isolated subject, no shadow"
     try:
         if ref is None:
             payload = {"model": model, "prompt": prompt, "n": 1, "size": "1024x1024",
-                       "quality": "low", "background": "transparent", "output_format": "png",
-                       "response_format": "b64_json"}
+                       "quality": "low", "output_format": "png", "response_format": "b64_json"}
+            if mode == "param":
+                payload["background"] = "transparent"
             st, data = http_json("POST", f"{base}/images/generations",
                                  {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                                  payload, timeout=300, retries=0)
         else:
             name, blob, mime = resolve_ref_blob(ref)
             fields = {"model": model, "prompt": prompt, "n": "1", "size": "1024x1024",
-                      "quality": "low", "background": "transparent", "output_format": "png",
-                      "response_format": "b64_json"}
+                      "quality": "low", "output_format": "png", "response_format": "b64_json"}
+            if mode == "param":
+                fields["background"] = "transparent"
             body, ctype = multipart(fields, [("image", name, blob, mime)])
             st, data = http_post_multipart(f"{base}/images/edits",
                                            {"Authorization": f"Bearer {key}", "Content-Type": ctype},
@@ -977,11 +987,16 @@ def bg_test(body):
     ref = _tiny_png_data_url()
     rows = []
     for m in models:
-        log(f"bg_test: {m} 文生图…")
-        r1 = _probe_transparent(p, key, m, None)
-        log(f"bg_test: {m} 图生图…")
-        r2 = _probe_transparent(p, key, m, ref)
-        rows.append({"model": m, "text2img": r1, "img2img": r2})
+        log(f"bg_test: {m} 文生图(参数)…")
+        r1 = _probe_transparent(p, key, m, None, "param")
+        log(f"bg_test: {m} 图生图(参数)…")
+        r2 = _probe_transparent(p, key, m, ref, "param")
+        # 参数被拒时, 额外试"只靠提示词"是否可行
+        r3 = None
+        if not r1.get("ok"):
+            log(f"bg_test: {m} 文生图(仅提示词)…")
+            r3 = _probe_transparent(p, key, m, None, "prompt")
+        rows.append({"model": m, "text2img": r1, "img2img": r2, "prompt_only": r3})
     def _verdict(r):
         if not r.get("ok"): return "不支持"
         info = r.get("info") or {}
@@ -991,10 +1006,13 @@ def bg_test(body):
     for r in rows:
         r["text2img"]["verdict"] = _verdict(r["text2img"])
         r["img2img"]["verdict"] = _verdict(r["img2img"])
+        if r.get("prompt_only"):
+            r["prompt_only"]["verdict"] = _verdict(r["prompt_only"])
     return {"rows": rows,
             "summary": {"total": len(rows),
                         "text2img_ok": sum(1 for r in rows if r["text2img"]["verdict"] == "支持 ✅"),
-                        "img2img_ok": sum(1 for r in rows if r["img2img"]["verdict"] == "支持 ✅")}}
+                        "img2img_ok": sum(1 for r in rows if r["img2img"]["verdict"] == "支持 ✅"),
+                        "prompt_only_ok": sum(1 for r in rows if r.get("prompt_only") and r["prompt_only"]["verdict"] == "支持 ✅")}}
 
 def settings():
     keys = load_keys()
