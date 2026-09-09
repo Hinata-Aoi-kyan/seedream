@@ -338,7 +338,41 @@ def multipart(fields, files):
     return b"".join(parts), "multipart/form-data; boundary=" + b
 
 # ---------- 提示词优化 ----------
-def describe_image(provider, chat_model, key, refs, prompt=None, ref_roles=None):
+# ---------- 文本模型调用(可关闭思考模式) ----------
+DISABLE_THINKING = os.getenv("DISABLE_THINKING", "1") not in ("0", "false", "no")
+
+def _should_retry_without_thinking(data):
+    t = json.dumps(data, ensure_ascii=False).lower()
+    if "thinking" in t: return True
+    return any(h in t for h in ("unknown parameter", "unrecognized", "unsupported parameter",
+                                "extra fields not permitted", "unexpected keyword"))
+
+def chat_completions(base, key, body, timeout=180, disable_thinking=None):
+    """调用 /chat/completions.
+
+    默认注入 thinking={"type":"disabled"} 关闭思考模式(DeepSeek/BytePlus 通用),
+    能显著提速; 若接口不支持该参数, 自动去掉重试一次.
+    """
+    if disable_thinking is None:
+        disable_thinking = DISABLE_THINKING
+    body = dict(body)
+    if disable_thinking:
+        body["thinking"] = {"type": "disabled"}
+    st, data = http_json("POST", f"{base}/chat/completions",
+                         {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                         body, timeout=timeout)
+    if st != 200 and body.get("thinking") and _should_retry_without_thinking(data):
+        log(f"thinking 参数被拒绝({st}), 去掉后重试")
+        b2 = dict(body); b2.pop("thinking", None)
+        st2, data2 = http_json("POST", f"{base}/chat/completions",
+                               {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                               b2, timeout=timeout)
+        if st2 == 200:
+            log("去掉 thinking 后调用成功")
+            return st2, data2
+    return st, data
+
+def describe_image(provider, chat_model, key, refs, prompt=None, ref_roles=None, disable_thinking=None):
     p = get_provider(provider); base = p["base_url"]
     refs = [r for r in (refs or []) if r]
     if not refs: raise ValueError("没有参考图")
@@ -356,13 +390,12 @@ def describe_image(provider, chat_model, key, refs, prompt=None, ref_roles=None)
     body = {"model": chat_model,
             "messages": [{"role": "system", "content": DESCRIBE_PROMPT}, {"role": "user", "content": content}],
             "temperature": 0.5}
-    st, data = http_json("POST", f"{base}/chat/completions",
-                         {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, body, timeout=300)
+    st, data = chat_completions(base, key, body, timeout=300, disable_thinking=disable_thinking)
     if st != 200:
         raise RuntimeError(f"图像描述失败({st}): {json.dumps(data, ensure_ascii=False)[:300]}")
     return {"description": data["choices"][0]["message"]["content"].strip()}
 
-def optimize_prompt(provider, chat_model, prompt, key, sys_prompt=None, refs=None, image_desc=None):
+def optimize_prompt(provider, chat_model, prompt, key, sys_prompt=None, refs=None, image_desc=None, disable_thinking=None):
     p = get_provider(provider); base = p["base_url"]
     refs = [r for r in (refs or []) if r]
     sysc = (sys_prompt or (VISION_OPT_PROMPT if refs else (DESC_OPT_PROMPT if image_desc else DEFAULT_OPT_PROMPT))).strip()
@@ -378,8 +411,7 @@ def optimize_prompt(provider, chat_model, prompt, key, sys_prompt=None, refs=Non
     body = {"model": chat_model,
             "messages": [{"role": "system", "content": sysc}, message],
             "temperature": 0.8}
-    st, data = http_json("POST", f"{base}/chat/completions",
-                         {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, body)
+    st, data = chat_completions(base, key, body, disable_thinking=disable_thinking)
     if st != 200:
         raise RuntimeError(f"优化失败: {json.dumps(data, ensure_ascii=False)[:500]}")
     return data["choices"][0]["message"]["content"].strip()
@@ -430,7 +462,12 @@ OPENAI_DENOISE = (
     "no color bleeding, no compression artifacts, no AI watermark, no extra text."
 )
 
-def gen_openai(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None, quality=None, background=None, clean_render=False):
+def _transparent_unsupported(data):
+    t = json.dumps(data, ensure_ascii=False).lower()
+    return "transparent" in t and ("not supported" in t or "unsupported" in t or "invalid_value" in t)
+
+def gen_openai(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None, quality=None,
+               background=None, clean_render=False, warns=None):
     base = p["base_url"]
     if clean_render: prompt = prompt.strip() + CLEAN_RENDER_PROMPT + CLEAN_RENDER_SUFFIX
     if len([r for r in (refs or []) if r]) >= 2: prompt = prompt.strip() + MULTI_REF_ROLE
@@ -439,18 +476,27 @@ def gen_openai(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None,
     # 干净渲染(开关控制)时追加去噪约束; 不开启则不加, 避免干扰用户提示词
     if clean_render:
         prompt = (prompt or "").rstrip() + " " + OPENAI_DENOISE
-    extra = {}
-    if quality: extra["quality"] = quality
-    if fmt: extra["output_format"] = fmt
-    if background: extra["background"] = background
-    if not imgs:
-        payload = {"model": model, "prompt": prompt, "n": 1, "response_format": "b64_json", "size": psize}
-        payload.update(extra)
-        st, data = http_json("POST", f"{base}/images/generations",
-            {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, payload, timeout=900)
-        if st != 200: raise RuntimeError(f"gpt-image: {json.dumps(data, ensure_ascii=False)[:800]}")
-        return [{"b64_json": it.get("b64_json", "")} for it in data.get("data") or []]
-    else:
+    # 透明背景要求 png/webp(官方文档), jpeg 自动改 png
+    if background == "transparent" and fmt == "jpeg":
+        log("透明背景需要 png/webp, 已把 jpeg 自动改为 png")
+        fmt = "png"
+
+    def make_extra(bg):
+        e = {}
+        if quality: e["quality"] = quality
+        if fmt: e["output_format"] = fmt
+        if bg: e["background"] = bg
+        return e
+
+    def call(bg):
+        extra = make_extra(bg)
+        if not imgs:
+            payload = {"model": model, "prompt": prompt, "n": 1, "response_format": "b64_json", "size": psize}
+            payload.update(extra)
+            st, data = http_json("POST", f"{base}/images/generations",
+                {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, payload, timeout=900)
+            if st != 200: return st, data, None
+            return st, data, [{"b64_json": it.get("b64_json", "")} for it in data.get("data") or []]
         files = []
         for ref in imgs:
             name, blob, mime = resolve_ref_blob(ref)
@@ -459,8 +505,22 @@ def gen_openai(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None,
         fields.update({k: str(v) for k, v in extra.items()})
         body, ctype = multipart(fields, files)
         st, data = http_post_multipart(f"{base}/images/edits", {"Authorization": f"Bearer {key}", "Content-Type": ctype}, body)
-        if st != 200: raise RuntimeError(f"gpt-image 编辑: {json.dumps(data, ensure_ascii=False)[:800]}")
-        return [{"b64_json": it.get("b64_json", "")} for it in data.get("data") or []]
+        if st != 200: return st, data, None
+        return st, data, [{"b64_json": it.get("b64_json", "")} for it in data.get("data") or []]
+
+    st, data, out = call(background)
+    # 透明背景不被该模型/中转支持 -> 自动回退不透明重试
+    if st != 200 and background == "transparent" and _transparent_unsupported(data):
+        log("透明背景不被该模型支持, 自动回退 background=opaque 重试")
+        st2, data2, out2 = call("opaque")
+        if st2 == 200:
+            if warns is not None:
+                warns.append("该模型/中转不支持透明背景，已自动改为不透明背景生成")
+            return out2
+        log(f"回退 opaque 仍失败({st2})")
+    if st != 200:
+        raise RuntimeError(f"gpt-image{' 编辑' if imgs else ''}: {json.dumps(data, ensure_ascii=False)[:800]}")
+    return out
 def preset_openai_size(size):
     n = (size or "auto").strip()
     if re.fullmatch(r"\d+\s*x\s*\d+", n):
@@ -805,7 +865,8 @@ def optimize(body):
     if desc:
         refs = None   # 已用文字描述代替图片
     return {"optimized_prompt": optimize_prompt(provider, cm, prompt, key,
-             body.get("optimize_prompt"), refs if body.get("use_vision") else None, desc)}
+             body.get("optimize_prompt"), refs if body.get("use_vision") else None, desc,
+             body.get("disable_thinking"))}
 def generate(body):
     provider = body["provider"]; im = body["image_model"]; prompt = body["prompt"]
     orig = body.get("original_prompt") or body.get("prompt") or ""
@@ -823,9 +884,11 @@ def generate(body):
         ckey = load_keys().get(chat_provider)
         if not ckey: raise ValueError(f"请先在设置里填写 {chat_provider} 的 API Key（用于提示词优化）")
         log(f"optimizing with {chat_provider}/{cm} ...")
+        _t1 = time.time()
         final = optimize_prompt(chat_provider, cm, prompt, ckey, body.get("optimize_prompt"),
-                                refs if body.get("use_vision") else None)
-        log(f"optimized, len={len(final)}")
+                                refs if body.get("use_vision") else None, None,
+                                body.get("disable_thinking"))
+        log(f"optimized, len={len(final)}, 耗时 {time.time()-_t1:.1f}s (thinking={'off' if body.get('disable_thinking') is not False else 'on'})")
         hist_opt = final
     else:
         final = body.get("pre_optimized_prompt") or prompt
@@ -863,11 +926,12 @@ def generate(body):
             role_prompt = " Reference image roles: " + "; ".join(lines) +                 ". Strictly follow these roles: use each Image ONLY for its assigned role, do not swap or merge identities/features between images."
             final = final.strip() + role_prompt
             log(f"injected ref_roles: {role_prompt[:120]}")
+    warns = []
     if provider == "byteplus":
         items = gen_byteplus(p, key, im, final, refs, size, fmt, wm, body.get("opt_mode"), body.get("clean_render"))
     else:
         items = gen_openai(p, key, im, final, refs, size, fmt, wm, body.get("opt_mode"),
-                           body.get("quality"), body.get("background"), body.get("clean_render"))
+                           body.get("quality"), body.get("background"), body.get("clean_render"), warns)
     log(f"image model returned {len(items)} item(s)")
     gid = uuid.uuid4().hex
     saved = save_outputs(items, gid)
@@ -888,6 +952,7 @@ def generate(body):
             imgs_out.append({"url": f"/img/{f}", "download": f"/img/{f}"})
     return {"id": gid, "files": saved, "optimized_prompt": final if opt else None,
             "final_prompt": final,
+            "warning": ("；".join(warns) if warns else None),
             "images": imgs_out}
 def history():
     c = db(); rows = c.execute("select id,ts,provider,model,prompt,optimized_prompt,refs,size,output,status,quality,opt_mode,background,format,watermark from gen order by ts desc").fetchall(); c.close()
@@ -1028,7 +1093,7 @@ class H(BaseHTTPRequestHandler):
             elif path == "/api/describe":
                 key = load_keys().get(body.get("provider"))
                 if not key: raise ValueError(f"请先在设置里填写 {body.get('provider')} 的 API Key")
-                self._send(200, describe_image(body["provider"], body["chat_model"], key, body.get("refs") or [], body.get("prompt"), body.get("ref_roles")))
+                self._send(200, describe_image(body["provider"], body["chat_model"], key, body.get("refs") or [], body.get("prompt"), body.get("ref_roles"), body.get("disable_thinking")))
             elif path == "/api/history/batch":
                 ids = body.get("ids") or [] if isinstance(body, dict) else []
                 self._send(200, del_history_many(ids))

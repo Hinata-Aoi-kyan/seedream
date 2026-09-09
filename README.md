@@ -53,9 +53,20 @@ bash manage.sh start        # 状态: bash manage.sh status  停止: bash manage
   - 文本：`dola-seed-2-1-turbo`（视觉）、`deepseek-v4-flash`、`deepseek-v3-0324`
 - **OpenAI 兼容中转**（文生图 `/images/generations`，图生图 `/images/edits`）
   - 生图：`gpt-image-2`、`gpt-image-2-4k`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`
+    - **2.5 两兄弟的区别**（OpenAI 官方）：`sunburst` = 基座模型，**质量为重**，画质高于 gpt-image-2；
+      `flare` = 小模型，**速度为重**，画质与 gpt-image-2 相当。要质量选 sunburst，要快选 flare。
     - 2.5 系列额外支持 `xhigh` / `max` 质量档
-    - 尺寸需为 **16 的倍数**、比例 1:3~3:1、最大 3840×2160（自动按模型给出合法档位）
+    - 尺寸约束：单边 ≤3840、双边为 **16 的倍数**、长边/短边 ≤3:1、总像素 655,360~8,294,400（>2560×1440 属实验性）
+    - **透明背景**：需配合 `png`/`webp`（选 jpeg 会自动改 png）。若该模型/中转不支持，网关会
+      **自动回退为不透明**并在结果区提示，不会直接失败。
   - 文本：`gpt-4o`
+
+## 提示词优化：关闭思考模式（默认开）
+推理类文本模型（DeepSeek V4、Seed 2.1 Turbo 等）默认会先输出思维链，**很慢**。
+网关默认注入 `thinking: {"type": "disabled"}` 跳过思考，只输出结果，**大幅提速**。
+- 前端开关：提示词优化设置 → **关闭思考模式（大幅提速）**（默认勾选）
+- 若某接口不认识该参数，网关会**自动去掉重试**，不会因此报错
+- 环境变量 `DISABLE_THINKING=0` 可全局关掉此行为
 
 新增 provider：在设置页「新增提供方」填 Base URL + Key，点「检测模型」下拉选择添加即可，无需改代码。
 
@@ -88,6 +99,7 @@ termux-notification --title 测试 --content 通了   # 手动验证
 | `MEDIA_DIR` | 自动 | 图片保存目录，默认写往 Termux 相册 |
 | `DB_PATH` | ./history.db | 历史数据库路径 |
 | `NET_RETRIES` | 2 | 传输层瞬时错误(SSL/断连/超时)的重试次数 |
+| `DISABLE_THINKING` | 1 | 置 0 则不注入 thinking=disabled（文本模型思考模式） |
 | `HTTP_UA` | SeedreamWeb/1.0 | 请求 User-Agent(部分 CDN 会拦截默认 Python UA) |
 | `ARK_API_KEY` / `OPENAI_API_KEY` | 空 | 也可用环境变量代替 keys.json |
 

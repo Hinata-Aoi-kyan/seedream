@@ -230,6 +230,13 @@
               <div style="font-size:13px">识别参考图并按图优化（需视觉模型）</div>
               <label class="switch"><input type="checkbox" id="useVision" checked><span class="slider"></span></label>
             </div>
+            <div class="toggle" style="margin-top:8px">
+              <div style="flex:1">
+                <div style="font-size:13px">关闭思考模式（大幅提速）</div>
+                <div class="opt-sub">DeepSeek / Seed 等推理模型跳过思维链，只输出结果</div>
+              </div>
+              <label class="switch"><input type="checkbox" id="noThinking" checked><span class="slider"></span></label>
+            </div>
             <label>优化系统提示词（可编辑）</label>
             <textarea id="optPrompt" style="min-height:100px"></textarea>
             <div style="text-align:right;min-height:16px;margin-top:4px">
@@ -516,7 +523,7 @@ function renderModelOptions(){
     const is4k=/4k/i.test(mdl);
     const is25=/2\.5/.test(mdl);   // gpt-image-2.5-*: 支持 xhigh/max, 尺寸需 16 倍数、最大 3840x2160
     const stdOpts=`<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024（3:2）</option><option value="1024x1536">1024x1536（2:3）</option>`;
-    const hiOpts=`<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024（3:2）</option><option value="1024x1536">1024x1536（2:3）</option><option value="2048x2048">2048x2048（1:1 高清）</option><option value="2048x1152">2048x1152（16:9）</option><option value="1152x2048">1152x2048（9:16）</option><option value="2560x1440">2560x1440（2K 16:9）</option><option value="3840x2160">3840x2160（4K 16:9）</option>`;
+    const hiOpts=`<option value="auto" selected>自动</option><option value="1024x1024">1024x1024（1:1）</option><option value="1536x1024">1536x1024（3:2）</option><option value="1024x1536">1024x1536（2:3）</option><option value="2048x2048">2048x2048（2K 方图）</option><option value="2048x1152">2048x1152（2K 16:9）</option><option value="1152x2048">1152x2048（2K 9:16）</option><option value="2560x1440">2560x1440（2K+ 16:9）</option><option value="3840x2160">3840x2160（4K 16:9）</option><option value="2160x3840">2160x3840（4K 9:16）</option>`;
     const sizeOpts= (is25||is4k) ? hiOpts : stdOpts;
     const qOpts = is25
       ? `<option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high" selected>高</option><option value="xhigh">xhigh（2.5 专属·更精细）</option><option value="max">max（2.5 专属·最高）</option>`
@@ -527,7 +534,7 @@ function renderModelOptions(){
       <div><label>格式</label><select id="oFmt"><option value="png" selected>png</option><option value="jpeg">jpeg</option><option value="webp">webp</option></select></div>
       <div><label>背景</label><select id="oBackground"><option value="auto" selected>自动</option><option value="transparent">透明背景</option><option value="opaque">不透明背景</option></select></div>
     </div>
-    ${is25?'<div class="small-note">已识别 gpt-image-2.5：支持 xhigh/max 质量档；尺寸需为 16 的倍数，最大 3840×2160（最终以中转支持为准）</div>':(is4k?'<div class="small-note">已识别为 4K 模型，提供更高分辨率（最终以中转支持为准）</div>':'')}`;
+    ${is25?'<div class="small-note">已识别 gpt-image-2.5：Sunburst=质量为重、Flare=速度为重；支持 xhigh/max 质量档；尺寸需为 16 的倍数、单边≤3840、比例≤3:1（最终以中转支持为准）。透明背景需配合 png/webp；若模型不支持会自动回退为不透明。</div>':(is4k?'<div class="small-note">已识别为 4K 模型，提供更高分辨率（最终以中转支持为准）。透明背景需配合 png/webp；若模型不支持会自动回退为不透明。</div>':'')}`;
   }
 }
 
@@ -609,11 +616,11 @@ async function optimizePrompt(){
     let desc=null;
     if($('optFlow').value==='two' && refs.length){
       $('optResult').textContent='正在提取参考图特征(中文)…';
-      const dd=await jpost('/api/describe',{provider:cp,chat_model:cm,refs:refUrls(),ref_roles:refRoles(),prompt:userInput});
+      const dd=await jpost('/api/describe',{provider:cp,chat_model:cm,refs:refUrls(),ref_roles:refRoles(),prompt:userInput,disable_thinking:$('noThinking')?$('noThinking').checked:true});
       desc=dd.description||''; $('imgDesc').value=desc; $('imgDescWrap').classList.remove('hide');
       $('optResult').textContent='正在合成优化提示词…';
     }
-    const body={provider:cp,chat_model:cm,prompt:userInput,optimize_prompt:$('optPrompt').value};
+    const body={provider:cp,chat_model:cm,prompt:userInput,optimize_prompt:$('optPrompt').value,disable_thinking:$('noThinking')?$('noThinking').checked:true};
     if(desc){ body.image_desc=desc; } else { body.refs=refUrls(); body.ref_roles=refRoles(); body.use_vision=$('useVision').checked; }
     const d=await jpost('/api/optimize',body);
     lastOptimized=d.optimized_prompt;
@@ -656,6 +663,8 @@ async function saveImageFile(url, filename){
 function renderResults(box, d){ const total=Math.round((Date.now()-_g0)/1000); box.innerHTML='';
   const sum=document.createElement('div'); sum.className='small-note'; sum.style.cssText='margin:0 0 10px;color:var(--acc2)';
   sum.textContent='✓ 生成完成 · 总耗时 '+total+' 秒'; box.appendChild(sum);
+  if(d.warning){ const wn=document.createElement('div'); wn.className='small-note';
+    wn.style.cssText='margin:0 0 10px;color:var(--warn,#e8a33d)'; wn.textContent='⚠ '+d.warning; box.appendChild(wn); }
   (d.images||[]).forEach(im=>{ const w=document.createElement('div'); w.className='res';
     const img=document.createElement('img'); img.src=im.url; img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url);
     const a=document.createElement('a'); a.href=im.download; a.download=''; a.innerHTML=icon('dl')+'保存';
@@ -686,6 +695,7 @@ async function generate(){
       quality: isBP ? null : ($('oQuality')?$('oQuality').value:'auto'),
       background: isBP ? null : ($('oBackground')?$('oBackground').value:'auto'),
       optimize:false, chat_provider:cp||null, chat_model:cm||null, optimize_prompt:optPrompt, use_vision:useVision,
+      disable_thinking: $('noThinking')? $('noThinking').checked : true,
       clean_render:$('cleanRender')?$('cleanRender').checked:false,
       compress: $('compress')?$('compress').checked:false};
     requestNotif();
