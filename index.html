@@ -512,17 +512,22 @@ function renderModelOptions(){
       <div><label>生图内置优化</label><select id="optMode"><option value="standard" selected>standard（默认，慢而好）</option><option value="fast">fast（更快，质量略降）</option></select></div>
     </div>`;
   } else {
-    const is4k=/4k/i.test($('imageModel').value||'');
-    const sizeOpts= is4k
-      ? `<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024</option><option value="1024x1536">1024x1536</option><option value="2048x2048">2048x2048</option><option value="2560x1440">2560x1440</option><option value="3840x2160">3840x2160</option><option value="4096x4096">4096x4096</option>`
-      : `<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024</option><option value="1024x1536">1024x1536</option>`;
+    const mdl=$('imageModel').value||'';
+    const is4k=/4k/i.test(mdl);
+    const is25=/2\.5/.test(mdl);   // gpt-image-2.5-*: 支持 xhigh/max, 尺寸需 16 倍数、最大 3840x2160
+    const stdOpts=`<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024（3:2）</option><option value="1024x1536">1024x1536（2:3）</option>`;
+    const hiOpts=`<option value="auto" selected>自动</option><option value="1024x1024">1024x1024</option><option value="1536x1024">1536x1024（3:2）</option><option value="1024x1536">1024x1536（2:3）</option><option value="2048x2048">2048x2048（1:1 高清）</option><option value="2048x1152">2048x1152（16:9）</option><option value="1152x2048">1152x2048（9:16）</option><option value="2560x1440">2560x1440（2K 16:9）</option><option value="3840x2160">3840x2160（4K 16:9）</option>`;
+    const sizeOpts= (is25||is4k) ? hiOpts : stdOpts;
+    const qOpts = is25
+      ? `<option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high" selected>高</option><option value="xhigh">xhigh（2.5 专属·更精细）</option><option value="max">max（2.5 专属·最高）</option>`
+      : `<option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high" selected>高（更精细，较慢）</option>`;
     box.innerHTML=`<div class="row" style="margin-top:10px">
       <div><label>尺寸</label><select id="oSize">${sizeOpts}</select></div>
-      <div><label>质量</label><select id="oQuality"><option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high" selected>高（更精细，较慢）</option></select></div>
+      <div><label>质量</label><select id="oQuality">${qOpts}</select></div>
       <div><label>格式</label><select id="oFmt"><option value="png" selected>png</option><option value="jpeg">jpeg</option><option value="webp">webp</option></select></div>
       <div><label>背景</label><select id="oBackground"><option value="auto" selected>自动</option><option value="transparent">透明背景</option><option value="opaque">不透明背景</option></select></div>
     </div>
-    ${is4k?'<div class="small-note">已识别为 4K 模型，提供更高分辨率（最终以中转支持为准）</div>':''}`;
+    ${is25?'<div class="small-note">已识别 gpt-image-2.5：支持 xhigh/max 质量档；尺寸需为 16 的倍数，最大 3840×2160（最终以中转支持为准）</div>':(is4k?'<div class="small-note">已识别为 4K 模型，提供更高分辨率（最终以中转支持为准）</div>':'')}`;
   }
 }
 
@@ -793,8 +798,17 @@ function hMeta(h){
     ['格式',h.format],['背景',h.background],
     ['时间',new Date((h.ts||0)*1000).toLocaleString()]];
   const ch=items.filter(x=>x[1]!==null&&x[1]!==undefined&&x[1]!=='')
-    .map(x=>`<div style="background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px"><span style="display:block;font-size:11px;color:var(--mut)">${esc(x[0])}</span><b style="font-size:13px">${esc(String(x[1]))}</b></div>`).join('');
+    .map(x=>`<div${x[0]==='实际尺寸'?' data-wh="1"':''} style="background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 9px"><span style="display:block;font-size:11px;color:var(--mut)">${esc(x[0])}</span><b style="font-size:13px">${esc(String(x[1]))}</b></div>`).join('');
   return `<div class="card" style="margin-top:14px"><label>生成信息</label><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:6px">${ch}</div></div>`; }
+// 后端没读到尺寸时的前端兜底: 用 Image() 读 naturalWidth/Height
+function probeWH(root, h){
+  if(!root || (h.img_w&&h.img_h)) return;
+  const cell=root.querySelector('[data-wh="1"] b'); if(!cell) return;
+  const u=((h.images||[])[0]||{}).url; if(!u) return;
+  const im=new Image();
+  im.onload=function(){ if(im.naturalWidth) cell.textContent=im.naturalWidth+'×'+im.naturalHeight; };
+  im.src=u;
+}
 function openViewer(h){
   const imgs=(h.images||[]).map(i=>i.url); if(!imgs.length){ toast('无图片'); return; }
   const v=document.createElement('div'); v.id='viewer';
@@ -809,6 +823,7 @@ function openViewer(h){
       ${h.optimized_prompt?`<div class="card"><label>优化后提示词</label><pre style="white-space:pre-wrap;font-size:13px;margin:0;color:var(--txt)">${esc(h.optimized_prompt)}</pre></div>`:''}
     </div>`;
   document.body.appendChild(v);
+  probeWH(v, h);
   const g=v.querySelector('#vGrid'); imgs.forEach(u=>{ const img=document.createElement('img'); img.src=u;
     img.style.cssText='width:100%;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;object-fit:contain;background:#000';
     img.onclick=()=>viewImage(u); g.appendChild(img); }); }
@@ -936,8 +951,10 @@ function providerCard(key){
     <div class="addbar">
       <button class="btn small" onclick="detect('${key}')">${icon('search')}检测模型</button>
       <button class="btn small" onclick="testConn('${key}')">连接测试</button>
+      <button class="btn small" onclick="netDiag('${key}')">网络诊断</button>
     </div>
     <div id="det_${key}" class="det hide"></div>
+    <div id="net_${key}" class="det hide"></div>
     ${modelListBlock(key,'image_models','生图模型')}
     ${modelListBlock(key,'chat_models','文本模型')}
 `;
@@ -993,6 +1010,25 @@ async function detect(key){
       : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加，或用「连接测试」验证）')+'</div>');
     fillDetDropdown(key);
   }catch(e){ box.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; } }
+async function netDiag(key){
+  const el=document.getElementById('net_'+key);
+  if(!el){ toast('找不到诊断容器'); return; }
+  el.classList.remove('hide');
+  el.innerHTML='<div class="small-note"><span class="spin"></span>正在测试网络（约需 10~30 秒）…</div>';
+  try{
+    const d=await jpost('/api/netdiag',{mb:5},300000);
+    let html='';
+    (d.tests||[]).forEach(t=>{
+      html+='<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0">'
+        + '<span style="flex:none">'+(t.ok?'✅':'❌')+'</span>'
+        + '<span style="flex:1;font-size:13px">'+esc(t.name)+'</span>'
+        + '<small style="flex:none;color:var(--mut)">'+(t.ms||0)+'ms</small></div>';
+      if(t.detail) html+='<div class="small-note" style="margin:0 0 6px 22px;font-size:12px">'+esc(t.detail)+'</div>';
+    });
+    if(d.advice) html+='<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--card2);border:1px solid var(--line);font-size:13px;line-height:1.6">'+esc(d.advice)+'</div>';
+    el.innerHTML=html;
+  }catch(e){ el.innerHTML='<div class="small-note">诊断失败: '+esc(e.message)+'</div>'; }
+}
 async function testConn(key){
   const base=document.getElementById('pbase_'+key).value.trim();
   const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();

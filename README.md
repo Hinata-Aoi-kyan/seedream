@@ -52,7 +52,9 @@ bash manage.sh start        # 状态: bash manage.sh status  停止: bash manage
   - 内置优化档位：`standard` / `fast`（`optimize_prompt_options.mode`）
   - 文本：`dola-seed-2-1-turbo`（视觉）、`deepseek-v4-flash`、`deepseek-v3-0324`
 - **OpenAI 兼容中转**（文生图 `/images/generations`，图生图 `/images/edits`）
-  - 生图：`gpt-image-2` / `gpt-image-2-4k`（质量、格式、背景、尺寸可选）
+  - 生图：`gpt-image-2`、`gpt-image-2-4k`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`
+    - 2.5 系列额外支持 `xhigh` / `max` 质量档
+    - 尺寸需为 **16 的倍数**、比例 1:3~3:1、最大 3840×2160（自动按模型给出合法档位）
   - 文本：`gpt-4o`
 
 新增 provider：在设置页「新增提供方」填 Base URL + Key，点「检测模型」下拉选择添加即可，无需改代码。
@@ -66,6 +68,18 @@ termux-notification --title 测试 --content 通了   # 手动验证
 ```
 带按钮失败时会自动回退为纯文字通知；所有发送结果都记在 `server.log`（`notify: 已发送(带按钮)` 等）。
 
+## 网络诊断(出 SSL/超时错误时先点它)
+设置页 → 任选一个提供方 → **网络诊断**，会依次测：接口可达 → 小请求 → 大下载 → 大上传，并给出结论。
+
+`BAD_RECORD_MAC` / `DECRYPTION_FAILED` / `EOF occurred` 这类错误的含义是 **TLS 数据在传输中被破坏**，
+与生图模型无关，典型成因是 VPN/代理(如 FlClash) 传输较大数据包时出错——gpt-image 的响应是整图 base64
+（1K 约 1~4 MB，4K 可达 10~25 MB），越大越容易触发。处理顺序：
+1. **直接重试**（网关已自动重试 2 次；可用 `NET_RETRIES` 调整）
+2. **换节点/换协议**
+3. **FlClash 的 TUN MTU 调低到 1400 或 1280**
+4. **关闭代理的 TLS 分片/嗅探等增强项**，或临时关代理直连测试
+5. 换用较小尺寸/较低质量再试
+
 ## 环境变量(可选)
 | 变量 | 默认 | 说明 |
 |---|---|---|
@@ -73,6 +87,8 @@ termux-notification --title 测试 --content 通了   # 手动验证
 | `HOST` | 0.0.0.0 | 监听地址 |
 | `MEDIA_DIR` | 自动 | 图片保存目录，默认写往 Termux 相册 |
 | `DB_PATH` | ./history.db | 历史数据库路径 |
+| `NET_RETRIES` | 2 | 传输层瞬时错误(SSL/断连/超时)的重试次数 |
+| `HTTP_UA` | SeedreamWeb/1.0 | 请求 User-Agent(部分 CDN 会拦截默认 Python UA) |
 | `ARK_API_KEY` / `OPENAI_API_KEY` | 空 | 也可用环境变量代替 keys.json |
 
 ## 说明

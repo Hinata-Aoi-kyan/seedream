@@ -19,6 +19,8 @@ KEYS_PATH = BASE_DIR / "keys.json"
 DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "history.db"))
 PORT = int(os.getenv("PORT", "8765"))
 HOST = os.getenv("HOST", "0.0.0.0")
+UA = os.getenv("HTTP_UA", "SeedreamWeb/1.0 (Termux; +https://localhost)")
+NET_RETRIES = int(os.getenv("NET_RETRIES", "2"))   # 传输层瞬时错误重试次数
 def _load_config():
     if CONFIG_PATH.exists():
         try:
@@ -231,21 +233,100 @@ def log(msg):
     except Exception: pass
 
 # ---------- 网络(urllib 标准库) ----------
-def http_json(method, url, headers, body, timeout=180):
+# 传输层瞬时错误: 多为 VPN/代理 在传大包时破坏 TLS 记录, 重试通常能成功
+_TRANSIENT_HINTS = (
+    "bad_record_mac", "decryption_failed", "sslv3_alert", "tlsv1_alert",
+    "unexpected_eof", "eof occurred", "ssl_error_syscall", "record_layer_failure",
+    "wrong_version_number", "connection reset", "connection aborted", "broken pipe",
+    "remote end closed", "timed out", "temporarily unavailable", "network is unreachable",
+)
+def _is_transient_net_error(text):
+    t = str(text or "").lower()
+    return any(h in t for h in _TRANSIENT_HINTS)
+
+def _friendly_net_error(text):
+    """把晦涩的 SSL/网络错误翻译成可操作的提示."""
+    t = str(text or "")
+    low = t.lower()
+    if "bad_record_mac" in low or "decryption_failed" in low:
+        return (t + " ｜ 原因: TLS 数据在传输中被破坏，通常是 VPN/代理(如 FlClash) 传输较大数据时出错，"
+                "与模型无关。可尝试: ① 直接重试 ② 换节点/换协议 ③ FlClash 的 TUN MTU 调低(如 1400) "
+                "④ 关闭代理的 TLS 分片/嗅探 ⑤ 换用较小尺寸再试")
+    if "unexpected_eof" in low or "eof occurred" in low or "connection reset" in low:
+        return t + " ｜ 原因: 连接被中途断开(代理不稳或服务端超时)。可直接重试。"
+    if "timed out" in low or "timeout" in low:
+        return t + " ｜ 原因: 请求超时(网络慢或代理不稳)。可重试或换节点。"
+    return t
+
+def _hdr(headers):
+    """补上 User-Agent(部分 CDN/网关会拦截 Python-urllib 默认 UA)."""
+    h = dict(headers or {})
+    if not any(k.lower() == "user-agent" for k in h):
+        h["User-Agent"] = UA
+    return h
+
+def http_json(method, url, headers, body, timeout=180, retries=None):
+    """带重试的 JSON 请求. 仅在传输层瞬时错误时重试."""
+    if retries is None: retries = NET_RETRIES
     data = json.dumps(body).encode() if body is not None else None
-    req = Request(url, data=data, method=method, headers=headers)
-    try:
-        with urlopen(req, timeout=timeout) as r:
-            return r.status, json.loads(r.read().decode())
-    except HTTPError as e:
-        try: return e.code, json.loads(e.read().decode())
-        except Exception: return e.code, {}
-    except Exception as e:
-        return 0, {"error": str(e)}
-def http_get(url, timeout=900):
-    req = Request(url, method="GET")
-    with urlopen(req, timeout=timeout) as r:
-        return r.read()
+    headers = _hdr(headers)
+    last = ""
+    for attempt in range(retries + 1):
+        req = Request(url, data=data, method=method, headers=headers)
+        try:
+            with urlopen(req, timeout=timeout) as r:
+                return r.status, json.loads(r.read().decode())
+        except HTTPError as e:
+            try: return e.code, json.loads(e.read().decode())
+            except Exception: return e.code, {}
+        except Exception as e:
+            last = str(e)
+            if attempt < retries and _is_transient_net_error(last):
+                log(f"net retry {attempt+1}/{retries} [{method} {url.split('?')[0]}] {last[:120]}")
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            break
+    return 0, {"error": _friendly_net_error(last)}
+
+def http_get(url, timeout=900, retries=None):
+    """带重试的二进制下载(GET 幂等, 重试安全)."""
+    if retries is None: retries = NET_RETRIES
+    last = ""
+    for attempt in range(retries + 1):
+        req = Request(url, method="GET", headers=_hdr({}))
+        try:
+            with urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except Exception as e:
+            last = str(e)
+            if attempt < retries and _is_transient_net_error(last):
+                log(f"net retry {attempt+1}/{retries} [GET {url.split('?')[0]}] {last[:120]}")
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            break
+    raise RuntimeError(_friendly_net_error(last))
+def http_post_multipart(url, headers, body, timeout=900, retries=None):
+    """multipart POST(参考图生图用). 传输层瞬时错误自动重试."""
+    if retries is None: retries = NET_RETRIES
+    headers = _hdr(headers)
+    last = ""
+    for attempt in range(retries + 1):
+        req = Request(url, data=body, method="POST", headers=headers)
+        try:
+            with urlopen(req, timeout=timeout) as r:
+                return r.status, json.loads(r.read().decode())
+        except HTTPError as e:
+            try: return e.code, json.loads(e.read().decode())
+            except Exception: return e.code, {}
+        except Exception as e:
+            last = str(e)
+            if attempt < retries and _is_transient_net_error(last):
+                log(f"net retry {attempt+1}/{retries} [POST multipart {url.split('?')[0]}] {last[:120]}")
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            break
+    return 0, {"error": _friendly_net_error(last)}
+
 def multipart(fields, files):
     b = "----sw" + uuid.uuid4().hex
     parts = []
@@ -377,15 +458,7 @@ def gen_openai(p, key, model, prompt, refs, size, fmt, watermark, opt_mode=None,
         fields = {"model": model, "prompt": prompt, "n": "1", "response_format": "b64_json", "size": psize}
         fields.update({k: str(v) for k, v in extra.items()})
         body, ctype = multipart(fields, files)
-        req = Request(f"{base}/images/edits", data=body, method="POST",
-                      headers={"Authorization": f"Bearer {key}", "Content-Type": ctype})
-        try:
-            with urlopen(req, timeout=900) as r: data = json.loads(r.read().decode())
-            st = r.status
-        except HTTPError as e:
-            try: data = json.loads(e.read().decode())
-            except Exception: data = {}
-            st = e.code
+        st, data = http_post_multipart(f"{base}/images/edits", {"Authorization": f"Bearer {key}", "Content-Type": ctype}, body)
         if st != 200: raise RuntimeError(f"gpt-image 编辑: {json.dumps(data, ensure_ascii=False)[:800]}")
         return [{"b64_json": it.get("b64_json", "")} for it in data.get("data") or []]
 def preset_openai_size(size):
@@ -451,6 +524,71 @@ def _dedupe_refs(refs):
         seen.add(d); clean.append(r)
     return clean, warnings
 
+# ---------- 图片尺寸(不依赖第三方库) ----------
+def _image_size(path):
+    """读取图片像素尺寸. 先试 PIL(若装了), 失败则纯 Python 解析文件头.
+
+    支持 PNG/JPEG/GIF/WebP/BMP —— 保证没装 pillow 时也能显示实际尺寸.
+    """
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            return int(im.width), int(im.height)
+    except Exception:
+        pass
+    try:
+        blob = Path(path).read_bytes()
+    except Exception:
+        return 0, 0
+    import struct
+    try:
+        # PNG: IHDR 宽高为 16..24 大端 4 字节
+        if blob[:8] == b"\x89PNG\r\n\x1a\n":
+            w, h = struct.unpack(">II", blob[16:24]); return int(w), int(h)
+        # GIF: 6..10 小端 2 字节
+        if blob[:6] in (b"GIF87a", b"GIF89a"):
+            w, h = struct.unpack("<HH", blob[6:10]); return int(w), int(h)
+        # BMP: 18..26 小端 4 字节(高度可能为负表示自上而下)
+        if blob[:2] == b"BM":
+            w, h = struct.unpack("<ii", blob[18:26]); return abs(int(w)), abs(int(h))
+        # WebP: RIFF 容器, 分 VP8 / VP8L / VP8X 三种
+        if blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
+            fmt = blob[12:16]
+            if fmt == b"VP8 ":
+                w, h = struct.unpack("<HH", blob[26:30])
+                return int(w & 0x3FFF), int(h & 0x3FFF)
+            if fmt == b"VP8L":
+                b0, b1, b2, b3 = blob[21], blob[22], blob[23], blob[24]
+                w = ((b1 & 0x3F) << 8 | b0) + 1
+                h = (((b3 & 0x0F) << 10) | (b2 << 2) | ((b1 & 0xC0) >> 6)) + 1
+                return int(w), int(h)
+            if fmt == b"VP8X":
+                w = int.from_bytes(blob[24:27], "little") + 1
+                h = int.from_bytes(blob[27:30], "little") + 1
+                return int(w), int(h)
+        # JPEG: 逐个扫描段, 找 SOF0~SOF15(排除 C4/C8/CC)
+        if blob[:2] == b"\xff\xd8":
+            i, n = 2, len(blob)
+            while i < n - 9:
+                if blob[i] != 0xFF:
+                    i += 1; continue
+                marker = blob[i + 1]
+                if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                    i += 2; continue
+                if marker == 0xD9:
+                    break
+                seg = int.from_bytes(blob[i + 2:i + 4], "big")
+                if seg < 2:
+                    i += 2; continue
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    h = int.from_bytes(blob[i + 5:i + 7], "big")
+                    w = int.from_bytes(blob[i + 7:i + 9], "big")
+                    return int(w), int(h)
+                i += 2 + seg
+    except Exception:
+        pass
+    return 0, 0
+
 # ---------- 保存输出 ----------
 def _looks_like_png(blob):
     return blob[:8] == b"\x89PNG\r\n\x1a\n"
@@ -470,13 +608,11 @@ def save_outputs(items, idp):
         fp = MEDIA / fn
         fp.write_bytes(blob)
         # 用文件读实际大小与像素(文件存在更可靠; 失败则0)
-        w=h=0; size_mb=0.0
         try:
             size_mb = round(fp.stat().st_size/1024/1024, 2)
-            from PIL import Image
-            img=Image.open(fp); w,h=img.size; img.close()
         except Exception:
-            pass
+            size_mb = round(len(blob)/1024/1024, 2)
+        w, h = _image_size(fp)
         saved.append({"file": fn, "mb": size_mb, "w": w, "h": h})
     return saved
 
@@ -559,6 +695,99 @@ def test_connection(body):
         except Exception as e:
             msg += f"；模型测试异常: {str(e)[:80]}"
     return {"ok": True, "status": st, "message": msg, "model_count": n}
+def net_diag(body):
+    """网络诊断: 分别测 接口可达 / 小请求 / 大下载 / 大上传, 判断是否代理破坏大包."""
+    mb = 5
+    try: mb = max(1, min(20, int((body or {}).get("mb") or 5)))
+    except Exception: pass
+    tests = []
+
+    def rec(name, ok, ms, detail=""):
+        tests.append({"name": name, "ok": bool(ok), "ms": int(ms), "detail": str(detail)[:200]})
+
+    # 0) 用户配置的接口是否可达(任何 HTTP 状态码都算"通", 说明 TLS+HTTP 正常)
+    base = (body or {}).get("base_url") or ""
+    prov = (body or {}).get("provider") or ""
+    if not base and prov:
+        base = (CONFIG.get(prov) or {}).get("base_url") or ""
+    if base:
+        from urllib.parse import urlparse as _up
+        host = _up(base if "://" in base else "https://" + base).hostname or base
+        t0 = time.time()
+        try:
+            with urlopen(Request(base.rstrip("/") + "/models", headers=_hdr({})), timeout=20) as r:
+                st = r.status; r.read()
+            rec(f"接口可达 ({host})", True, (time.time() - t0) * 1000, f"HTTP {st}")
+        except HTTPError as e:
+            rec(f"接口可达 ({host})", True, (time.time() - t0) * 1000, f"HTTP {e.code}（能连上，权限/路径问题不算网络故障）")
+        except Exception as e:
+            rec(f"接口可达 ({host})", False, (time.time() - t0) * 1000, _friendly_net_error(str(e)))
+
+    # 1) 小请求(TLS 握手 + 小响应)
+    t0 = time.time()
+    try:
+        with urlopen(Request("https://speed.cloudflare.com/__down?bytes=1024", headers=_hdr({})), timeout=20) as r:
+            n = len(r.read()); st = r.status
+        rec("小请求 (TLS 握手)", st == 200, (time.time() - t0) * 1000, f"HTTP {st} · {n} B")
+    except Exception as e:
+        rec("小请求 (TLS 握手)", False, (time.time() - t0) * 1000, _friendly_net_error(str(e)))
+
+    # 2) 大下载(多个备选目标, 用第一个能连上的)
+    down_urls = [
+        f"https://speed.cloudflare.com/__down?bytes={mb * 1024 * 1024}",
+        f"https://cachefly.cachefly.net/{mb}mb.test",
+        f"https://proof.ovh.net/files/{mb}Mb.dat",
+    ]
+    t0 = time.time(); done = False; last_err = ""
+    for u in down_urls:
+        try:
+            req = Request(u, headers=_hdr({}))
+            with urlopen(req, timeout=180) as r:
+                got = 0
+                while True:
+                    chunk = r.read(65536)
+                    if not chunk: break
+                    got += len(chunk)
+            ok = got >= mb * 1024 * 1024 * 0.9
+            rec(f"大下载 {mb} MB", ok, (time.time() - t0) * 1000,
+                f"收到 {got/1024/1024:.1f} MB · {u.split('/')[2]}")
+            done = True; break
+        except HTTPError as e:
+            last_err = f"HTTP {e.code}（目标不可用，换一个）"; continue
+        except Exception as e:
+            last_err = _friendly_net_error(str(e)); break
+    if not done:
+        rec(f"大下载 {mb} MB", False, (time.time() - t0) * 1000, last_err)
+
+    # 3) 大上传
+    t0 = time.time()
+    try:
+        req = Request("https://speed.cloudflare.com/__up", data=b"x" * (2 * 1024 * 1024),
+                      method="POST", headers=_hdr({"Content-Type": "application/octet-stream"}))
+        with urlopen(req, timeout=120) as r:
+            st = r.status; r.read()
+        rec("大上传 2 MB", st == 200, (time.time() - t0) * 1000, f"HTTP {st}")
+    except HTTPError as e:
+        rec("大上传 2 MB", True, (time.time() - t0) * 1000, f"HTTP {e.code}（上传已到达服务端）")
+    except Exception as e:
+        rec("大上传 2 MB", False, (time.time() - t0) * 1000, _friendly_net_error(str(e)))
+
+    # 结论
+    small_ok = tests[-3]["ok"] if len(tests) >= 3 else True
+    big_tests = [t for t in tests if t["name"].startswith(("大下载", "大上传"))]
+    big_ok = all(t["ok"] for t in big_tests) if big_tests else True
+    if small_ok and big_ok:
+        advice = "网络正常 ✅ 小请求与大流量都通过；若生图仍失败，多半是接口/参数问题（把具体报错发我）。"
+    elif small_ok and not big_ok:
+        advice = ("小请求正常、大流量失败 ❌ —— 基本可确定是 VPN/代理(FlClash) 破坏了较大的 TLS 数据包，"
+                  "与生图模型无关。建议：① FlClash 的 TUN MTU 调低到 1400 或 1280 ② 换节点/换协议 ③ "
+                  "关闭 TLS 分片/嗅探等增强项 ④ 或临时关代理直连测试。")
+    elif not small_ok:
+        advice = "连小请求都失败 ❌ —— 检查网络是否连通、是否需要开代理、DNS 是否正常。"
+    else:
+        advice = "结果异常，请把上面的详情发我。"
+    return {"tests": tests, "advice": advice}
+
 def settings():
     keys = load_keys()
     return {"providers": {k: {"has_key": bool(v)} for k, v in keys.items()}}
@@ -678,11 +907,10 @@ def history():
                 if fp.exists():
                     try:
                         mb = round(fp.stat().st_size/1024/1024, 2)
-                        import io as _io
-                        from PIL import Image
-                        img = Image.open(_io.BytesIO(fp.read_bytes())); w, h = img.size; img.close()
                     except Exception:
                         pass
+                    if not w or not h:
+                        w, h = _image_size(fp)
             meta = {'file': fname, 'mb': mb, 'w': w, 'h': h}
             if not first_meta: first_meta = meta
             imgs.append({"url": f"/img/{fname}", "download": f"/img/{fname}", "mb": mb, "w": w, "h": h})
@@ -810,6 +1038,7 @@ class H(BaseHTTPRequestHandler):
                 threading.Thread(target=_run_job, args=(task_id, body), daemon=True).start()
                 self._send(200, {"task_id": task_id})
             elif path == "/api/detect": self._send(200, detect_models(body))
+            elif path == "/api/netdiag": self._send(200, net_diag(body))
             elif path == "/api/test": self._send(200, test_connection(body))
             else: self._send(404, {"error": "not found"})
         except ValueError as e:
