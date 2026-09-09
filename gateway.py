@@ -36,47 +36,90 @@ CONFIG = _load_config()
 _jobs = {}
 _jobs_lock = threading.Lock()
 
-def _notify_cmd(cmd):
+def _notify_cmd(cmd, timeout=8):
+    """执行 termux-notification, 返回 (成功, 错误信息)."""
     try:
         import subprocess
-        r = subprocess.run(cmd, capture_output=True, timeout=8)
-        return r.returncode == 0
+        r = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        if r.returncode == 0:
+            return True, ""
+        err = (r.stderr or b"").decode("utf-8", "replace").strip()[:200]
+        return False, err or f"exit={r.returncode}"
     except Exception as e:
         log(f"notify subprocess error: {e}")
-        return False
+        return False, str(e)[:200]
 
-def notify(title, content, url=None):
-    """调用 termux-notification 弹系统通知(仅纯文字, 最稳)."""
+def notify(title, content, url=None, btn="打开"):
+    """弹系统通知. 优先带按钮+点击动作, 失败自动回退纯文字(最稳).
+
+    - url: 点击通知/按钮时用 termux-open-url 打开的地址
+    - 全部失败时写 server.log, 便于排查
+    """
     try:
         import shutil
         bin = shutil.which("termux-notification")
         if not bin:
             log("notify: 未找到 termux-notification（请先 pkg install termux-api）")
             return
-        cmd = [bin, "--title", title, "--content", str(content)[:200]]
-        if _notify_cmd(cmd):
-            log("notify: 已发送")
+        base = [bin, "--title", str(title), "--content", str(content)[:200]]
+        open_bin = shutil.which("termux-open-url")
+        if url and open_bin:
+            action = f"{open_bin} {url}"
+            # 方案1: 按钮 + 点击通知都打开
+            cmd = base + ["--action", action, "--button1", str(btn), "--button1-action", action]
+            ok, err = _notify_cmd(cmd)
+            if ok:
+                log("notify: 已发送(带按钮)")
+                return
+            log(f"notify: 带按钮失败({err}), 回退纯文字")
+            # 方案2: 仅点击通知打开
+            cmd = base + ["--action", action]
+            ok, err = _notify_cmd(cmd)
+            if ok:
+                log("notify: 已发送(带动作,无按钮)")
+                return
+            log(f"notify: 带动作失败({err}), 回退纯文字")
+        elif url and not open_bin:
+            log("notify: 未找到 termux-open-url, 仅发纯文字")
+        # 方案3: 纯文字(最稳)
+        ok, err = _notify_cmd(base)
+        if ok:
+            log("notify: 已发送(纯文字)")
         else:
-            log("notify: 发送失败")
+            log(f"notify: 发送失败 {err}")
     except Exception as e:
         log(f"notify error: {e}")
+
+def _short_model(m):
+    m = str(m or "")
+    # 去掉日期后缀(如 -260628), 过长再截断
+    m = re.sub(r"-\d{6}$", "", m)
+    return m if len(m) <= 28 else m[:28] + "…"
 
 def _run_job(task_id, body):
     try:
         t0 = time.time()
         res = generate(body); res["_status"] = "done"
         dur = int(time.time() - t0)
-        model = (body.get("image_model") or "").rsplit("-", 1)[0]
+        imgs = res.get("images") or []
         size = body.get("size") or ""
-        msg = f"模型 {model} · 尺寸 {size} · 耗时 {dur} 秒 · 生成 {len(res.get('images') or [])} 张"
+        px = ""
+        for im in imgs:
+            if im.get("w") and im.get("h"):
+                px = f" · {im['w']}×{im['h']}"; break
+        mb = next((im.get("mb") for im in imgs if im.get("mb")), None)
+        msg = (f"{_short_model(body.get('image_model'))} · 尺寸 {size} · 耗时 {dur} 秒"
+               f" · 生成 {len(imgs)} 张{px}" + (f" · {mb} MB" if mb else ""))
         with _jobs_lock:
             _jobs[task_id] = res
-        notify("Seedream 生成完成", msg, "http://localhost:8765/#history")
+        notify("Seedream 生成完成", msg, "http://localhost:8765/#history", "查看记录")
     except Exception as e:
+        err = str(e)[:160]
         res = {"_status": "failed", "error": str(e)[:300]}
         with _jobs_lock:
             _jobs[task_id] = res
-        notify("Seedream 生成失败", f"{body.get('image_model','')} · {str(e)[:140]}", "http://localhost:8765/#history")
+        notify("Seedream 生成失败", f"{_short_model(body.get('image_model'))} · {err}",
+               "http://localhost:8765/#history", "查看记录")
 
 DEFAULT_OPT_PROMPT = (
     "你是一个专业的AI绘画提示词工程师。请把用户的中文/英文需求扩展成一段高质量、"
@@ -108,10 +151,6 @@ CLEAN_RENDER_PROMPT = (
     "使用极其干净的角色卡渲染：连续清晰的线稿，平滑均匀的渐变，受控的平面色块，"
     "干净的轮廓，克制的纹理，细节清楚易读。头发缝隙和细小饰品保持自然通透，"
     "避免随机色点、彩色色斑、脏污纹理、压缩伪影、局部碎影和意外的脏色纹理。"
-)
-CLEAN_RENDER_SUFFIX = (
-    " 只出现提示词明确要求的角色，不漏人、不复制、不融合；"
-    "避免额外文字、Logo、水印、重复肢体或畸形手指。"
 )
 CLEAN_RENDER_SUFFIX = (
     " 只出现提示词明确要求的角色，不漏人、不复制、不融合；"
@@ -654,22 +693,38 @@ def history():
                     "img_mb": first_meta.get('mb'), "img_w": first_meta.get('w'), "img_h": first_meta.get('h'),
                     "images": imgs})
     return out
+def _file_names(files):
+    """output 字段里的 files 可能是 [{"file":...}] 或 ["xxx.png"], 统一取出文件名."""
+    out = []
+    for f in (files or []):
+        if isinstance(f, dict):
+            n = f.get("file")
+        else:
+            n = f
+        if n: out.append(str(n))
+    return out
+
 def del_history(gid):
     c = db(); row = c.execute("select output from gen where id=?", (gid,)).fetchone()
-    files = json.loads(row[0] or "{}").get("files", []) if row else []
+    if not row:
+        c.close(); return {"ok": True, "deleted": 0, "files_removed": 0}
+    files = json.loads(row[0] or "{}").get("files", [])
     c.execute("delete from gen where id=?", (gid,)); c.commit(); c.close()
-    for f in files:
-        try: (MEDIA / f).unlink(missing_ok=True)
-        except Exception: pass
-    return {"ok": True}
+    removed = 0
+    for name in _file_names(files):
+        try:
+            (MEDIA / name).unlink(missing_ok=True); removed += 1
+        except Exception as e:
+            log(f"del_history: 删除图片 {name} 失败: {e}")
+    return {"ok": True, "deleted": 1, "files_removed": removed}
 
 def del_history_many(ids):
     n = 0
     for gid in (ids or []):
         try:
-            del_history(gid); n += 1
-        except Exception:
-            pass
+            n += del_history(gid).get("deleted", 0)
+        except Exception as e:
+            log(f"del_history_many: {gid} 失败: {e}")
     return {"ok": True, "deleted": n}
 
 # ---------- HTTP ----------

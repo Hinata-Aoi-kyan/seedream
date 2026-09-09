@@ -1,8 +1,7 @@
-<<<<<<< HEAD
 # Seedream Web · 手机本地生图网关
 
 一个跑在 **手机 Termux**（或任何 Python 环境）里的本地网关 + 网页界面。
-浏览器打开 `localhost:8765` 即可：选图做**多参考图生图**、接入**多个 API / 不同模型**、**生成记录**、结果**自动存相册**。
+浏览器打开 `localhost:8765` 即可：多参考图生图、接入多个 API / 不同模型、提示词优化、生成记录、结果自动存相册。
 
 ## 为什么要有这个网关
 - AI 接口（尤其 BytePlus 生图）**不允许浏览器直接跨域调用**（CORS 预检不放开 `Authorization` 头），纯网页直连会报跨域错。
@@ -12,50 +11,60 @@
 ## 目录结构
 ```
 seedream-web/
-├── gateway.py        # 本地网关 (FastAPI)，负责多 provider 转发、存图、历史库
-├── index.html        # 前端界面(单文件)
-├── providers.json    # 各 provider / 模型的配置
-├── requirements.txt  # pip 依赖
-├── static/           # 静态资源(可留空)
+├── gateway.py             # 本地网关(纯标准库 HTTP 服务)，多 provider 转发、存图、历史库、系统通知
+├── index.html             # 前端界面(单文件)
+├── providers.default.json # 默认配置(随仓库分发)
+├── providers.json         # 用户配置(gitignore，更新不覆盖)
+├── manage.sh / start.sh   # 启动/停止/重启/状态
+├── manifest.json / sw.js  # PWA
+├── static/                # 静态资源(图标、Sortable.min.js)
 └── README.md
 ```
+> 敏感文件不入库：`providers.json`、`keys.json`、`prefs.json`、`history.db`、`media/`、`server.log`。
 
 ## 手机 (Termux) 运行步骤
 ```bash
 # 1) 安装 Termux(F-Droid 版, 勿用 Play 版) 后:
-pkg update && pkg install python -y
+pkg update && pkg install python termux-api -y
 termux-setup-storage        # 授权访问相册(必须, 结果图才进相册)
 pip install -U pip
-pip install fastapi uvicorn requests pillow
+pip install pillow          # 可选: 用于参考图压缩与尺寸读取
 
-# 2) 把 seedream-web 文件夹拷到手机(如放 ~/storage/downloads/)
-#    进入目录
-cd ~/storage/downloads/seedream-web
+# 2) 把 seedream-web 文件夹拷到手机(如 ~/seedream-web)，进入目录
+cd ~/seedream-web
 
-# 3) 启动网关
-python3 gateway.py
-# 看到提示后, 用手机浏览器打开:
-#   http://localhost:8765
+# 3) 启动网关(后台常驻)
+bash manage.sh start        # 状态: bash manage.sh status  停止: bash manage.sh stop
+# 浏览器打开 http://localhost:8765
 ```
 
 ## 首次使用
-1. 点右上角 **🔑 设置**，填入各 provider 的 API Key：
-   - **BytePlus / 火山方舟**：`ARK_API_KEY`（在 ai.byteplus.com 生成）
-   - **OpenAI**：`OPENAI_API_KEY`
-2. 回到主页，输入提示词，可选开启 **✨ 优化提示词**（用 DeepSeek / GPT 文本模型扩写）。
-3. **参考图**：点"＋选择参考图"可多选（最多 10 张，按顺序融合）；本地图自动转 base64，也可粘贴 URL。
-4. 选择生图模型与尺寸 → **🚀 生成**。
-5. 结果自动保存到手机相册 `Pictures/seedream-web/`，并出现在下方 **📚 生成记录**，可查看/下载/删除。
+1. 点右上角 **设置**，填入各 provider 的 API Key（BytePlus 用 `ARK_API_KEY`，OpenAI 中转用对应 Key）。
+2. 回主页输入提示词，可点 **优化提示词**（用文本模型扩写；有参考图时可用视觉模型）。
+3. **参考图**：最多 10 张，可拖拽排序、逐张指定作用（主体/姿势/构图等），本地图自动转 base64，也可粘贴 URL。
+4. 选生图模型与尺寸 → **生成图片**。任务在后台跑，可以离开页面；完成/失败会弹**手机系统通知**（点击可跳回记录页）。
+5. 结果自动保存到手机相册 `Pictures/seedream-web/`，并出现在 **生成记录**，可回看/保存/批量删除。
 
-## 支持的模型(在 providers.json 里改)
-- **BytePlus / 火山方舟**
-  - 生图：`dola-seedream-5-0-pro-260628`（Seedream 5.0 Pro，最多 10 张参考图）、`seedream-5-0`（Lite）
-  - 文本：`deepseek-r1-250528`（DeepSeek R1）、`deepseek-v3-0324`（DeepSeek V3）
-- **OpenAI**
-  - 生图：`gpt-image-1`（文生图 + 图生图编辑，`/images/edits`）
+## 支持的模型(在设置页或 providers.json 里改)
+- **BytePlus / 火山方舟**（`/images/generations`，支持多参考图）
+  - 生图：`dola-seedream-5-0-pro-260628`（Seedream 5.0 Pro）、`seedream-5-0`（Lite）
+  - 尺寸：只接受 `1K / 1.5K / 2K / auto` 或 `宽x高` 像素；比例值会自动映射为合法像素
+  - 内置优化档位：`standard` / `fast`（`optimize_prompt_options.mode`）
+  - 文本：`dola-seed-2-1-turbo`（视觉）、`deepseek-v4-flash`、`deepseek-v3-0324`
+- **OpenAI 兼容中转**（文生图 `/images/generations`，图生图 `/images/edits`）
+  - 生图：`gpt-image-2` / `gpt-image-2-4k`（质量、格式、背景、尺寸可选）
   - 文本：`gpt-4o`
 
-新增 provider：在 `providers.json` 追加一个 provider，并在 `gateway.py` 的 `gen` 字典和 `load_keys` 的 `envmap` 里加对应适配即可。
+新增 provider：在设置页「新增提供方」填 Base URL + Key，点「检测模型」下拉选择添加即可，无需改代码。
+
+## 通知(可选但推荐)
+网关通过 `termux-notification` 弹系统通知，点击/按钮用 `termux-open-url` 打开记录页。
+```bash
+pkg install termux-api          # 并安装 Termux:API App(F-Droid)
+# 系统设置 → 应用 → Termux:API → 通知权限 → 允许
+termux-notification --title 测试 --content 通了   # 手动验证
+```
+带按钮失败时会自动回退为纯文字通知；所有发送结果都记在 `server.log`（`notify: 已发送(带按钮)` 等）。
 
 ## 环境变量(可选)
 | 变量 | 默认 | 说明 |
@@ -67,9 +76,12 @@ python3 gateway.py
 | `ARK_API_KEY` / `OPENAI_API_KEY` | 空 | 也可用环境变量代替 keys.json |
 
 ## 说明
-- **存相册**：网关直接把图片写入 `~/storage/pictures/seedream-web`（即 `/sdcard/Pictures/seedream-web`），所以你**不需要手动下载**，生成即进相册。
-- **生成记录**：存在本机 SQLite `history.db`，图片原图保留在 `Pictures/seedream-web`，网页里可随时回看。
-- **提示词优化**：先用文本模型把用户需求扩成结构化的高质量英文 prompt，再喂给生图模型（两段式串联）。
-=======
-# seedream
->>>>>>> origin/main
+- **存相册**：网关直接把图片写入 `~/storage/pictures/seedream-web`（即 `/sdcard/Pictures/seedream-web`），生成即进相册，不需要手动下载。
+- **生成记录**：存在本机 SQLite `history.db`；删除记录会同时删除相册里的原图。
+- **后台任务**：`POST /api/generate` 起线程，前端轮询 `/api/task/{id}`，因此生成期间可以切走。
+- **提示词优化**：先用文本模型把用户需求扩成结构化的高质量英文 prompt，再喂给生图模型。
+
+## 更新
+```bash
+cd ~/seedream-web && git pull origin main && bash manage.sh restart
+```
