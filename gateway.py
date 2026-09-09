@@ -649,6 +649,87 @@ def _image_size(path):
         pass
     return 0, 0
 
+def _png_alpha(blob, max_lines=300):
+    """解析 PNG 是否真含透明通道/透明像素(纯标准库).
+
+    返回 {w,h,alpha_channel,sampled,transparent,checked}
+    alpha_channel=返回图是否带 alpha 通道; transparent=采样到完全透明像素的个数
+    """
+    import struct, zlib
+    if len(blob) < 33 or blob[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    pos, idat = 8, []
+    w = h = bd = ct = interlace = 0
+    while pos + 8 <= len(blob):
+        ln = int.from_bytes(blob[pos:pos + 4], "big")
+        typ = blob[pos + 4:pos + 8]
+        data = blob[pos + 8:pos + 8 + ln]
+        if typ == b"IHDR":
+            w, h = struct.unpack(">II", data[:8]); bd = data[8]; ct = data[9]; interlace = data[12]
+        elif typ == b"IDAT":
+            idat.append(data)
+        elif typ == b"IEND":
+            break
+        pos += 12 + ln
+    info = {"w": w, "h": h, "alpha_channel": ct in (4, 6), "sampled": 0,
+            "transparent": 0, "checked": False}
+    if bd != 8 or interlace != 0 or ct not in (0, 2, 4, 6) or not idat:
+        return info
+    ch = {0: 1, 2: 3, 4: 2, 6: 4}[ct]
+    try:
+        raw = zlib.decompress(b"".join(idat))
+    except Exception:
+        return info
+    stride = w * ch
+    prev = bytearray(stride)
+    p = 0
+    for _ in range(min(h, max_lines)):
+        if p + 1 + stride > len(raw):
+            break
+        ft = raw[p]; p += 1
+        line = bytearray(raw[p:p + stride]); p += stride
+        if ft == 1:
+            for i in range(ch, stride):
+                line[i] = (line[i] + line[i - ch]) & 255
+        elif ft == 2:
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 255
+        elif ft == 3:
+            for i in range(stride):
+                a = line[i - ch] if i >= ch else 0
+                line[i] = (line[i] + ((a + prev[i]) >> 1)) & 255
+        elif ft == 4:
+            for i in range(stride):
+                a = line[i - ch] if i >= ch else 0
+                b = prev[i]; c = prev[i - ch] if i >= ch else 0
+                pa = abs(b - c); pb = abs(a - c); pc = abs(a + b - 2 * c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pr) & 255
+        if ct == 6:
+            for i in range(3, stride, ch * 16):
+                info["sampled"] += 1
+                if line[i] == 0: info["transparent"] += 1
+        elif ct == 4:
+            for i in range(1, stride, ch * 16):
+                info["sampled"] += 1
+                if line[i] == 0: info["transparent"] += 1
+        prev = line
+    info["checked"] = True
+    return info
+
+def _tiny_png_data_url(w=64, h=64, rgb=(200, 80, 80)):
+    """生成一张纯色小图(data URL), 用于测试图生图接口."""
+    import struct, zlib
+    row = bytes(rgb) * w
+    raw = b"".join(b"\x00" + row for _ in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw, 9))
+           + chunk(b"IEND", b""))
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
 # ---------- 保存输出 ----------
 def _looks_like_png(blob):
     return blob[:8] == b"\x89PNG\r\n\x1a\n"
@@ -847,6 +928,73 @@ def net_diag(body):
     else:
         advice = "结果异常，请把上面的详情发我。"
     return {"tests": tests, "advice": advice}
+
+def _probe_transparent(p, key, model, ref=None):
+    """试一次透明背景请求, 返回 {ok,error,info}."""
+    base = p["base_url"]
+    prompt = "a single red circle centered on a plain background, isolated subject, no shadow"
+    try:
+        if ref is None:
+            payload = {"model": model, "prompt": prompt, "n": 1, "size": "1024x1024",
+                       "quality": "low", "background": "transparent", "output_format": "png",
+                       "response_format": "b64_json"}
+            st, data = http_json("POST", f"{base}/images/generations",
+                                 {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                                 payload, timeout=300, retries=0)
+        else:
+            name, blob, mime = resolve_ref_blob(ref)
+            fields = {"model": model, "prompt": prompt, "n": "1", "size": "1024x1024",
+                      "quality": "low", "background": "transparent", "output_format": "png",
+                      "response_format": "b64_json"}
+            body, ctype = multipart(fields, [("image", name, blob, mime)])
+            st, data = http_post_multipart(f"{base}/images/edits",
+                                           {"Authorization": f"Bearer {key}", "Content-Type": ctype},
+                                           body, retries=0)
+        if st != 200:
+            msg = ""
+            if isinstance(data, dict):
+                e = data.get("error") or data
+                msg = e.get("message") if isinstance(e, dict) else str(e)
+            return {"ok": False, "error": (msg or json.dumps(data, ensure_ascii=False))[:200]}
+        items = data.get("data") or []
+        b64 = items[0].get("b64_json") if items else None
+        if not b64:
+            return {"ok": False, "error": "返回里没有图片数据"}
+        info = _png_alpha(base64.b64decode(b64))
+        return {"ok": True, "info": info}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+def bg_test(body):
+    """检测各生图模型是否支持透明背景(文生图 / 图生图 两条路径)."""
+    provider = (body or {}).get("provider") or ""
+    p = get_provider(provider); key = load_keys().get(provider)
+    if not key: raise ValueError(f"请先在设置里填写 {provider} 的 API Key")
+    models = [m.get("id") for m in (p.get("image_models") or []) if m.get("id")]
+    only = (body or {}).get("models")
+    if only: models = [m for m in models if m in only]
+    if not models: raise ValueError("该提供方没有配置生图模型")
+    ref = _tiny_png_data_url()
+    rows = []
+    for m in models:
+        log(f"bg_test: {m} 文生图…")
+        r1 = _probe_transparent(p, key, m, None)
+        log(f"bg_test: {m} 图生图…")
+        r2 = _probe_transparent(p, key, m, ref)
+        rows.append({"model": m, "text2img": r1, "img2img": r2})
+    def _verdict(r):
+        if not r.get("ok"): return "不支持"
+        info = r.get("info") or {}
+        if not info.get("alpha_channel"): return "参数被忽略(返回无透明通道)"
+        if info.get("transparent", 0) > 0: return "支持 ✅"
+        return "有通道但无透明像素"
+    for r in rows:
+        r["text2img"]["verdict"] = _verdict(r["text2img"])
+        r["img2img"]["verdict"] = _verdict(r["img2img"])
+    return {"rows": rows,
+            "summary": {"total": len(rows),
+                        "text2img_ok": sum(1 for r in rows if r["text2img"]["verdict"] == "支持 ✅"),
+                        "img2img_ok": sum(1 for r in rows if r["img2img"]["verdict"] == "支持 ✅")}}
 
 def settings():
     keys = load_keys()
@@ -1104,6 +1252,7 @@ class H(BaseHTTPRequestHandler):
                 self._send(200, {"task_id": task_id})
             elif path == "/api/detect": self._send(200, detect_models(body))
             elif path == "/api/netdiag": self._send(200, net_diag(body))
+            elif path == "/api/bgtest": self._send(200, bg_test(body))
             elif path == "/api/test": self._send(200, test_connection(body))
             else: self._send(404, {"error": "not found"})
         except ValueError as e:
