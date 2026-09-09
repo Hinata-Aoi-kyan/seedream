@@ -1127,15 +1127,13 @@ async function bgTest(key){
       return '<td style="padding:8px 6px;vertical-align:top"><b style="color:'+col+'">'+v+'</b>'+extra+'</td>';
     };
     html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
-      +'<tr style="text-align:left;color:var(--mut);font-size:12px"><th style="padding:6px">模型</th><th style="padding:6px">文生图</th><th style="padding:6px">图生图</th><th style="padding:6px">仅提示词</th></tr>';
+      +'<tr style="text-align:left;color:var(--mut);font-size:12px"><th style="padding:6px">模型</th><th style="padding:6px">文生图</th><th style="padding:6px">图生图(带参考图)</th></tr>';
     (d.rows||[]).forEach(r=>{
       html+='<tr style="border-top:1px solid var(--line)"><td style="padding:8px 6px;font-size:12px">'+esc(r.model)+'</td>'
-        +okCell(r.text2img)+okCell(r.img2img)
-        + (r.prompt_only ? okCell(r.prompt_only) : '<td style="padding:8px 6px;color:var(--mut);font-size:12px">—</td>')
-        +'</tr>';
+        +okCell(r.text2img)+okCell(r.img2img)+'</tr>';
     });
     html+='</table></div>';
-    const s=d.summary||{}, total=s.total||0, t2i=s.text2img_ok||0, i2i=s.img2img_ok||0, po=s.prompt_only_ok||0;
+    const s=d.summary||{}, total=s.total||0, t2i=s.text2img_ok||0, i2i=s.img2img_ok||0;
     let concl='';
     if(total && t2i===0 && i2i===0){
       const allSame=(d.rows||[]).every(r=>{
@@ -1143,20 +1141,17 @@ async function bgTest(key){
         return /not supported/i.test(e);
       });
       concl = allSame
-        ? '该中转<b>完全没有实现透明背景</b>：所有模型、两条路径都返回同一条「not supported」。这是中转侧不支持，不是模型能力或参数写法的问题。'
+        ? '该中转<b>完全没有实现透明背景</b>：所有模型、两条路径都返回同一条「not supported」。这是中转侧不支持，不是模型能力或参数写法的问题，想要透明背景需要换支持的中转。'
         : '所有模型都不支持透明背景，可能是该中转未透传 background 参数。';
-      concl += po>0
-        ? ' <b style="color:var(--acc2)">但「仅提示词」方式可行</b>：不传 background 参数、只在提示词里要求透明，也能拿到真透明图 —— 生成时可以试试在提示词里写明「transparent background」。'
-        : ' 「仅提示词」方式也不行，说明该中转输出的是不透明图，想要透明背景需要换支持的中转。';
     } else if(t2i>0 && i2i===0){
       concl='文生图支持透明，但带参考图的图生图不支持 —— 中转的 edits 路径未实现透明背景。生成时若带参考图选透明，会自动回退为不透明。';
     } else if(t2i>0 || i2i>0){
       concl='部分模型/路径支持透明背景，见上表。不支持的会自动回退为不透明背景。';
     }
     html+='<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--card2);border:1px solid var(--line);font-size:13px;line-height:1.6">'
-      +'文生图 '+esc(String(t2i))+'/'+esc(String(total))+'，图生图 '+esc(String(i2i))+'/'+esc(String(total))
-      +(po?'，仅提示词 '+esc(String(po))+'/'+esc(String(total)):'')+'。'
+      +'文生图 '+esc(String(t2i))+'/'+esc(String(total))+'，图生图 '+esc(String(i2i))+'/'+esc(String(total))+'。'
       +(concl?'<br>'+concl:'')
+      +'<br><span style="color:var(--mut);font-size:12px">提示：提示词里写「透明背景」没用 —— 模型只会画一个方格图案假装透明，那不是真 alpha 通道。</span>'
       +'</div>';
     el.innerHTML=html;
   }catch(e){ el.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; }
