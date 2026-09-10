@@ -428,7 +428,7 @@ function scrollToResults(){
   try{ target.scrollTo({top:Math.max(0,top), behavior:'smooth'}); }
   catch(e){ target.scrollTop=Math.max(0,top); }
 }
-let _gTimer=null, _g0=0, _gEl=null;
+let _gTimer=null, _g0=0, _gEl=null, _lastGenCtx=null;
 function genTimerStart(){ _g0=Date.now(); clearInterval(_gTimer);
   _gTimer=setInterval(()=>{ if(_gEl && document.body.contains(_gEl)) _gEl.textContent=' · 已用时 '+Math.round((Date.now()-_g0)/1000)+' 秒'; else clearInterval(_gTimer); },1000); }
 function genTimerStop(){ clearInterval(_gTimer); _gTimer=null; }
@@ -739,21 +739,22 @@ async function saveImageFile(url, filename){
   }catch(e){}
   const a=document.createElement('a'); a.href=url; a.download=filename||''; a.style.display='none'; document.body.appendChild(a); a.click(); setTimeout(function(){ a.remove(); }, 500);
 }
-function renderResults(box, d){ const total=Math.round((Date.now()-_g0)/1000); box.innerHTML='';
+function renderResults(box, d, ctx){ const total=Math.round((Date.now()-_g0)/1000); box.innerHTML='';
   const sum=document.createElement('div'); sum.className='small-note'; sum.style.cssText='margin:0 0 10px;color:var(--acc2)';
   sum.textContent='✓ 生成完成 · 总耗时 '+total+' 秒'; box.appendChild(sum);
   if(d.warning){ const wn=document.createElement('div'); wn.className='small-note';
     wn.style.cssText='margin:0 0 10px;color:var(--warn,#e8a33d)'; wn.textContent='⚠ '+d.warning; box.appendChild(wn); }
+  const gp=(ctx&&ctx.provider)||'', gm=(ctx&&ctx.model)||'';
   (d.images||[]).forEach(im=>{ const w=document.createElement('div'); w.className='res';
-    const img=document.createElement('img'); img.src=im.url; img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url);
+    const img=document.createElement('img'); img.src=im.url; img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url, gp, gm);
     const a=document.createElement('a'); a.href=im.download; a.download=''; a.innerHTML=icon('dl')+'保存';
     a.onclick=function(e){ e.preventDefault(); saveImageFile(im.download, 'seedream.png'); };
     const ed=document.createElement('a'); ed.href='#'; ed.innerHTML=icon('edit')+'局部编辑';
-    ed.onclick=function(e){ e.preventDefault(); openImageEditor(im.url); };
+    ed.onclick=function(e){ e.preventDefault(); openImageEditor(im.url, gp, gm); };
     w.append(img,a,ed); box.appendChild(w); }); }
 function pollTask(taskId, box, btnAll){
   const iv=setInterval(async ()=>{ try{ const t=await jget('/api/task/'+taskId); const st=t._status;
-    if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t); notifyBrowser('生成完成','已生成 '+(t.images||[]).length+' 张');
+    if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t,_lastGenCtx); notifyBrowser('生成完成','已生成 '+(t.images||[]).length+' 张');
       toast('生成成功'); clearDraft(); loadHistory(); btnAll.forEach(b=>b.disabled=false); }
     else if(st==='failed'){ clearInterval(iv); genTimerStop();
       box.innerHTML='<div class="small-note">失败: '+esc(t.error||'未知错误')+'</div>'; notifyBrowser('生成失败',t.error||'未知错误');
@@ -780,6 +781,7 @@ async function generate(){
       clean_render:$('cleanRender')?$('cleanRender').checked:false,
       compress: $('compress')?$('compress').checked:false};
     requestNotif();
+    _lastGenCtx = {provider: body.provider, model: body.image_model};
     const sub=await jpost('/api/generate',body,30000);
     pollTask(sub.task_id, box, btnAll);
   }catch(e){ genTimerStop(); box.innerHTML='<div class="small-note">提交失败: '+esc(e.message)+'</div>'; toast('提交失败'); btnAll.forEach(b=>b.disabled=false); }
@@ -788,15 +790,48 @@ async function generate(){
 
 /* ---------- 局部编辑 ---------- */
 let ED = null;
-function openImageEditor(ref){
+function edPickDefault(prov, model){
+  // 默认: 原图使用的模型; 不可用则退回生成页当前选择
+  if(prov && model && MODELS[prov] && (MODELS[prov].image_models||[]).some(m=>m.id===model))
+    return {provider:prov, model:model};
+  const p=($('provider')&&$('provider').value)||'';
+  const m=($('imageModel')&&$('imageModel').value)||'';
+  if(p && m) return {provider:p, model:m};
+  const keys=Object.keys(MODELS||{}); 
+  for(const k of keys){ const ims=(MODELS[k].image_models||[]); if(ims.length) return {provider:k, model:ims[0].id}; }
+  return {provider:'', model:''};
+}
+function edBuildModelSel(){
+  const sel=document.getElementById('edModelSel'); if(!sel||!ED) return;
+  sel.innerHTML='';
+  let hit=false;
+  Object.keys(MODELS||{}).forEach(function(p){
+    const ims=(MODELS[p].image_models||[]); if(!ims.length) return;
+    const g=document.createElement('optgroup'); g.label=MODELS[p].label||p;
+    ims.forEach(function(m){
+      const o=document.createElement('option'); o.value=p+'::'+m.id; o.textContent=m.label||m.id;
+      if(p===ED.provider && m.id===ED.model){ o.selected=true; hit=true; }
+      g.appendChild(o);
+    });
+    sel.appendChild(g);
+  });
+  if(!hit && sel.options.length) sel.selectedIndex=0;
+  sel.onchange=function(){
+    const parts=(sel.value||'::').split('::');
+    ED.provider=parts[0]; ED.model=parts.slice(1).join('::');
+    edUpdateHint();
+  };
+}
+function openImageEditor(ref, prov, model){
   if(ED || !ref) return;
+  const dflt=edPickDefault(prov, model);
   const ov=document.createElement('div'); ov.id='editor';
   ov.innerHTML=`
    <div class="edbar">
      <button class="icon-btn" onclick="closeImageEditor()" style="box-shadow:none;width:40px;height:40px"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
-     <div style="flex:1;text-align:center;min-width:0">
+     <div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px">
        <div style="font-size:14px;font-weight:600">局部编辑</div>
-       <div class="small-note" id="edModel" style="margin:0;font-size:11px"></div>
+       <select id="edModelSel" style="font-size:11px;padding:2px 8px;max-width:100%;border-radius:6px;border:1px solid var(--line);background:var(--card2);color:var(--txt)"></select>
      </div>
      <button class="btn primary" id="edSend" onclick="edSubmit()">发送</button>
    </div>
@@ -820,8 +855,9 @@ function openImageEditor(ref){
    </div>`;
   document.body.appendChild(ov);
   navPush();
-  ED = { ref:ref, tool:'brush', brush:40, strokes:[], rect:null, drag:null,
-         cw:0, ch:0, nat:{w:0,h:0}, busy:false, src:ref };
+  ED = { ref:ref, provider:dflt.provider, model:dflt.model, tool:'brush', brush:40,
+         strokes:[], rect:null, drag:null, cw:0, ch:0, nat:{w:0,h:0}, busy:false, src:ref };
+  edBuildModelSel();
   const img=document.getElementById('edImg');
   img.onload=function(){ edLayout(); };
   img.onerror=function(){ toast('图片加载失败'); };
@@ -838,13 +874,8 @@ function closeImageEditor(fromBack){
 }
 function edRelayoutSoon(){ setTimeout(edLayout, 60); }
 function edUpdateHint(){
-  const el=document.getElementById('edHint'); if(!el) return;
-  const p=$('provider') ? ($('provider').value||'') : '';
-  const conf=(MODELS[p]||{}); const lbl=conf.label||p;
-  const m=$('imageModel') ? ($('imageModel').value||'') : '';
-  const isBP = (p==='byteplus');
-  const mm=document.getElementById('edModel');
-  if(mm) mm.textContent=lbl+' · '+m;
+  const el=document.getElementById('edHint'); if(!el||!ED) return;
+  const isBP = (ED.provider==='byteplus');
   el.textContent = isBP
     ? '在图上涂抹或框选要修改的区域 → 模型按归一化坐标只改该区域'
     : '在图上涂抹或框选要修改的区域 → 以遮罩精确重绘（需中转支持 mask 参数）';
@@ -972,7 +1003,8 @@ async function edSubmit(){
   if(!edHasSel()){ toast('请先在图上涂抹或框选要修改的区域'); return; }
   const prompt=($('edPrompt').value||'').trim();
   if(!prompt){ toast('请输入要修改的内容'); return; }
-  const p=$('provider').value, m=$('imageModel').value;
+  const p=ED.provider, m=ED.model;
+  if(!p || !m){ toast('请选择重绘模型'); return; }
   const isBP=(p==='byteplus');
   ED.busy=true;
   const btn=$('edSend'); btn.disabled=true; btn.textContent='提交中…';
@@ -1148,7 +1180,7 @@ function openViewer(h){
   probeWH(v, h);
   const g=v.querySelector('#vGrid'); imgs.forEach(u=>{ const img=document.createElement('img'); img.src=u;
     img.style.cssText='width:100%;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;object-fit:contain;background:#000';
-    img.onclick=()=>viewImage(u); g.appendChild(img); }); }
+    img.onclick=()=>viewImage(u, h.provider, h.model); g.appendChild(img); }); }
 function closeViewer(fromBack){
   var v=document.getElementById('viewer'); if(!v) return;
   if(fromBack !== true){ navBack(); return; }
@@ -1160,7 +1192,9 @@ function downloadAll(id){ const h=currentHistory.find(x=>x.id===id); if(!h) retu
 let lbScale=1, lbTx=0, lbTy=0, lbMoved=false, lbImg=null;
 function copyH(id){ const h=currentHistory.find(x=>x.id===id); if(!h) return; copyPrompt(h.prompt||''); }
 function copyPrompt(txt){ try{ navigator.clipboard.writeText(txt||'').then(()=>toast('已复制提示词')).catch(()=>{ const ta=document.createElement('textarea'); ta.value=txt||''; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('已复制提示词'); }); }catch(e){ toast('复制失败'); } }
-function viewImage(src){
+let lbProv='', lbModel='';
+function viewImage(src, prov, model){
+  lbProv=prov||''; lbModel=model||'';
   let v=document.getElementById('lightbox');
   if(!v){ v=document.createElement('div'); v.id='lightbox';
     v.style.cssText='position:fixed;inset:0;z-index:200;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;';
@@ -1168,7 +1202,7 @@ function viewImage(src){
   lbScale=1; lbTx=0; lbTy=0; lbMoved=false;
   v.innerHTML='<img id="lbImg" src="'+esc(src)+'" style="position:absolute;left:50%;top:50%;max-width:100vw;max-height:100vh;object-fit:contain;will-change:transform">'
     +'<button id="lbEdit" class="btn primary" style="position:absolute;right:14px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:5;box-shadow:0 6px 20px rgba(0,0,0,.4)">'+icon('edit')+' 局部编辑</button>';
-  document.getElementById('lbEdit').onclick=function(e){ e.stopPropagation(); closeLightbox(); setTimeout(function(){ openImageEditor(src); }, 260); };
+  document.getElementById('lbEdit').onclick=function(e){ e.stopPropagation(); closeLightbox(); setTimeout(function(){ openImageEditor(src, lbProv, lbModel); }, 260); };
   document.getElementById('lbEdit').ontouchstart=function(e){ e.stopPropagation(); };
   lbImg=document.getElementById('lbImg');
   function apply(){ const s=lbScale; lbImg.style.transform='translate(-50%,-50%) translate('+lbTx+'px,'+lbTy+'px) scale('+s+')'; }
