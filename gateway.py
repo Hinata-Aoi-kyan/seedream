@@ -140,8 +140,13 @@ def _edit_openai(p, key, model, img_blob, img_mime, mask_blob, prompt, size, qua
 def _edit_byteplus(p, key, model, data_url, prompt, box, size, fmt):
     """Seedream 局部编辑: 在 prompt 里注入归一化坐标(0-999) Image 1 x1 y1 x2 y2."""
     url = f"{p['base_url']}/images/generations"
-    if not _seed_size_ok(size):
-        size = "2K"
+    # Seedream 编辑不接受 size=auto(那是 layer_decomposition 专用), 需映射到合法档位
+    sz = str(size or "").strip()
+    if not sz or sz.lower() == "auto" or not _seed_size_ok(sz):
+        fallback = os.getenv("EDIT_SEED_SIZE", "2K")
+        log(f"edit: size='{size}' 对 Seedream 编辑非法, 改用 {fallback}")
+        sz = fallback
+    size = sz
     p2 = prompt.strip().rstrip("。.")
     if box and len(box) == 4:
         x1, y1, x2, y2 = [int(round(float(v))) for v in box]
@@ -149,8 +154,13 @@ def _edit_byteplus(p, key, model, data_url, prompt, box, size, fmt):
         x2 = max(0, min(999, x2)); y2 = max(0, min(999, y2))
         if x2 < x1: x1, x2 = x2, x1
         if y2 < y1: y1, y2 = y2, y1
-        full = (f"{p2}. Only modify the specified region Image 1 {x1} {y1} {x2} {y2}; "
-                f"keep everything else in Image 1 unchanged.")
+        if x1 <= 10 and y1 <= 10 and x2 >= 989 and y2 >= 989:
+            # 全选整图: 不要说 "keep everything else unchanged"(自相矛盾)
+            full = (f"{p2}. Apply this change to the entire image Image 1, "
+                    f"while keeping the same subject and composition.")
+        else:
+            full = (f"{p2}. Only modify the specified region Image 1 {x1} {y1} {x2} {y2}; "
+                    f"keep everything else in Image 1 unchanged.")
     else:
         full = f"{p2}. Only modify the area described; keep everything else unchanged."
     log(f"byteplus edit prompt: {full[:200]}")
@@ -273,6 +283,15 @@ DESCRIBE_PROMPT = (
     "（按第1张、第2张……顺序，与你上传顺序一致），分别说明每一张图在生成中的作用与要点"
     "（主体与特征、构图或姿态、场景背景、光影色调、风格与细节等）。"
     "请以【图1】【图2】… 分段输出，只输出描述本身，不要多余说明。"
+)
+EDIT_OPT_PROMPT = (
+    "你是一个AI图像局部编辑（inpainting / 局部重绘）指令专家。"
+    "用户会给出一个【局部修改需求】，需要改写成一句精准、简短的英文编辑指令。要求：\n"
+    "1. 只描述被选中区域应该变成什么：颜色、材质、内容、风格、文字等具体变化；\n"
+    "2. 明确指出这是局部修改，并强调 keep the rest of the image unchanged；\n"
+    "3. 绝不扩写成整张画面的完整描述——不要添加背景、构图、光影、镜头等无关内容；\n"
+    "4. 长度控制在 15~50 个英文单词，越精准越短越好；\n"
+    "5. 只输出改写后的指令本身，不要解释、不要加引号、不要输出多段。"
 )
 CLEAN_RENDER_PROMPT = (
     "使用极其干净的角色卡渲染：连续清晰的线稿，平滑均匀的渐变，受控的平面色块，"
@@ -1137,8 +1156,11 @@ def optimize(body):
     refs = body.get("refs") or []
     if desc:
         refs = None   # 已用文字描述代替图片
+    sysp = body.get("optimize_prompt")
+    if not sysp and body.get("for_edit"):
+        sysp = EDIT_OPT_PROMPT    # 局部编辑: 用专用优化器(短而精准)
     return {"optimized_prompt": optimize_prompt(provider, cm, prompt, key,
-             body.get("optimize_prompt"), refs if body.get("use_vision") else None, desc,
+             sysp, refs if body.get("use_vision") else None, desc,
              body.get("disable_thinking"))}
 def generate(body):
     provider = body["provider"]; im = body["image_model"]; prompt = body["prompt"]

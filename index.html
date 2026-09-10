@@ -801,6 +801,14 @@ function edPickDefault(prov, model){
   for(const k of keys){ const ims=(MODELS[k].image_models||[]); if(ims.length) return {provider:k, model:ims[0].id}; }
   return {provider:'', model:''};
 }
+function shortModelName(m){
+  const lb=(m.label||'').trim();
+  if(lb && lb!==m.id) return lb;
+  let s=String(m.id||'');
+  s=s.replace(/-\d{6,8}$/,'');           // 去掉日期后缀
+  if(s.length>24) s=s.slice(0,24)+'…';
+  return s;
+}
 function edBuildModelSel(){
   const sel=document.getElementById('edModelSel'); if(!sel||!ED) return;
   sel.innerHTML='';
@@ -809,7 +817,7 @@ function edBuildModelSel(){
     const ims=(MODELS[p].image_models||[]); if(!ims.length) return;
     const g=document.createElement('optgroup'); g.label=MODELS[p].label||p;
     ims.forEach(function(m){
-      const o=document.createElement('option'); o.value=p+'::'+m.id; o.textContent=m.label||m.id;
+      const o=document.createElement('option'); o.value=p+'::'+m.id; o.textContent=shortModelName(m);
       if(p===ED.provider && m.id===ED.model){ o.selected=true; hit=true; }
       g.appendChild(o);
     });
@@ -828,12 +836,10 @@ function openImageEditor(ref, prov, model){
   const ov=document.createElement('div'); ov.id='editor';
   ov.innerHTML=`
    <div class="edbar">
-     <button class="icon-btn" onclick="closeImageEditor()" style="box-shadow:none;width:40px;height:40px"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
-     <div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px">
-       <div style="font-size:14px;font-weight:600">局部编辑</div>
-       <select id="edModelSel" style="font-size:11px;padding:2px 8px;max-width:100%;border-radius:6px;border:1px solid var(--line);background:var(--card2);color:var(--txt)"></select>
-     </div>
-     <button class="btn primary" id="edSend" onclick="edSubmit()">发送</button>
+     <button class="icon-btn" onclick="closeImageEditor()" style="box-shadow:none;width:40px;height:40px;flex:none"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+     <span style="font-size:14px;font-weight:600;white-space:nowrap;flex:none">局部编辑</span>
+     <select id="edModelSel" style="flex:1;min-width:0;font-size:12px;padding:6px 8px;border-radius:7px;border:1px solid var(--line);background:var(--card2);color:var(--txt);text-overflow:ellipsis"></select>
+     <button class="btn primary" id="edSend" onclick="edSubmit()" style="flex:none;padding:9px 15px">发送</button>
    </div>
    <div class="edstage" id="edStage">
      <div class="edwrap" id="edWrap">
@@ -845,10 +851,14 @@ function openImageEditor(ref, prov, model){
      <div class="edrow">
        <button class="edtool on" id="edT_brush" onclick="edTool('brush')">画笔</button>
        <button class="edtool" id="edT_rect" onclick="edTool('rect')">框选</button>
-       <span style="font-size:12px;color:var(--mut)">粗细</span>
+       <span style="font-size:12px;color:var(--mut);flex:none">粗细</span>
        <input type="range" id="edSize" min="8" max="140" value="40">
+     </div>
+     <div class="edrow" style="margin-bottom:8px">
+       <button class="btn small" onclick="edSelectAll()">全选</button>
        <button class="btn small" onclick="edUndo()">撤销</button>
        <button class="btn small" onclick="edClear()">清空</button>
+       <button class="btn small" id="edOptBtn" onclick="edOptimize()" style="margin-left:auto">✨ 优化措辞</button>
      </div>
      <textarea id="edPrompt" placeholder="描述要改成什么，例如：把这里换成一只猫 / 把这件衣服改成红色"></textarea>
      <div class="small-note" id="edHint"></div>
@@ -971,6 +981,26 @@ function edUndo(){
   edRedraw();
 }
 function edClear(){ if(!ED) return; ED.strokes=[]; ED.rect=null; edRedraw(); }
+function edSelectAll(){
+  if(!ED || !ED.cw) return;
+  ED.strokes=[]; ED.rect={x1:0, y1:0, x2:ED.cw, y2:ED.ch};
+  edRedraw(); toast('已全选整张图');
+}
+async function edOptimize(){
+  if(!ED || ED.busy) return;
+  const ta=$('edPrompt'); const txt=(ta.value||'').trim();
+  if(!txt){ toast('请先输入修改要求'); return; }
+  const cmv=chatModelValue();
+  if(!cmv){ toast('请先在「生成」页选好优化用的文本模型'); return; }
+  const parts=cmv.split('::'); const cp=parts[0], cm=parts.slice(1).join('::');
+  const b=$('edOptBtn'); const old=b.textContent; b.disabled=true; b.textContent='优化中…';
+  try{
+    const d=await jpost('/api/optimize',{provider:cp, chat_model:cm, prompt:txt, for_edit:true,
+      disable_thinking: $('noThinking')?$('noThinking').checked:true}, 200000);
+    if(d.optimized_prompt){ ta.value=d.optimized_prompt; toast('已优化为精准的编辑指令'); }
+  }catch(e){ toast('优化失败: '+e.message); }
+  finally{ b.disabled=false; b.textContent=old; }
+}
 function edHasSel(){ return ED && (ED.strokes.length>0 || !!ED.rect); }
 function edBuildMask(){
   const c=document.createElement('canvas'); c.width=ED.cw; c.height=ED.ch;
