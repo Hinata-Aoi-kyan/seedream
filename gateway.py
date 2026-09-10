@@ -98,10 +98,135 @@ def _short_model(m):
     m = re.sub(r"-\d{6}$", "", m)
     return m if len(m) <= 28 else m[:28] + "…"
 
-def _run_job(task_id, body):
+def _resolve_image_ref(ref):
+    """把 /img/xxx、data:、http(s) 图片引用解析为 (name, blob, mime)."""
+    if not ref: raise ValueError("缺少图片")
+    if ref.startswith("data:"):
+        meta, b64 = ref.split(",", 1)
+        mime = (meta.split(";")[0].split(":")[1] or "image/png")
+        return "edit.png", base64.b64decode(b64), mime
+    if ref.startswith("/img/"):
+        name = ref[len("/img/"):].split("?")[0]
+        fp = MEDIA / name
+        if not fp.exists(): raise ValueError("图片不存在: " + name)
+        return name, fp.read_bytes(), (mimetypes.guess_type(name)[0] or "image/png")
+    if ref.startswith("http"):
+        return "edit.png", http_get(ref, timeout=120), "image/png"
+    raise ValueError("无法识别的图片引用")
+
+def _edit_openai(p, key, model, img_blob, img_mime, mask_blob, prompt, size, quality, fmt, background):
+    """GPT 局部编辑: /images/edits + mask(透明=要重绘的区域, 不透明=保留)."""
+    base = p["base_url"]
+    psize = preset_openai_size(size)
+    files = [("image", "image.png", img_blob, img_mime or "image/png")]
+    if mask_blob:
+        files.append(("mask", "mask.png", mask_blob, "image/png"))
+    fields = {"model": model, "prompt": prompt, "n": "1",
+              "response_format": "b64_json", "size": psize}
+    if quality: fields["quality"] = quality
+    if fmt: fields["output_format"] = fmt
+    if background: fields["background"] = background
+    body, ctype = multipart(fields, files)
+    st, data = http_post_multipart(f"{base}/images/edits",
+                                   {"Authorization": f"Bearer {key}", "Content-Type": ctype}, body)
+    if st != 200:
+        msg = ""
+        if isinstance(data, dict):
+            e = data.get("error") or data
+            msg = e.get("message") if isinstance(e, dict) else str(e)
+        raise RuntimeError(f"局部编辑失败: {(msg or json.dumps(data, ensure_ascii=False))[:400]}")
+    return [{"b64_json": it.get("b64_json", "")} for it in data.get("data") or []]
+
+def _edit_byteplus(p, key, model, data_url, prompt, box, size, fmt):
+    """Seedream 局部编辑: 在 prompt 里注入归一化坐标(0-999) Image 1 x1 y1 x2 y2."""
+    url = f"{p['base_url']}/images/generations"
+    if not _seed_size_ok(size):
+        size = "2K"
+    p2 = prompt.strip().rstrip("。.")
+    if box and len(box) == 4:
+        x1, y1, x2, y2 = [int(round(float(v))) for v in box]
+        x1 = max(0, min(999, x1)); y1 = max(0, min(999, y1))
+        x2 = max(0, min(999, x2)); y2 = max(0, min(999, y2))
+        if x2 < x1: x1, x2 = x2, x1
+        if y2 < y1: y1, y2 = y2, y1
+        full = (f"{p2}. Only modify the specified region Image 1 {x1} {y1} {x2} {y2}; "
+                f"keep everything else in Image 1 unchanged.")
+    else:
+        full = f"{p2}. Only modify the area described; keep everything else unchanged."
+    log(f"byteplus edit prompt: {full[:200]}")
+    body = {"model": model, "prompt": full, "size": size, "output_format": fmt,
+            "response_format": "url", "watermark": False, "image": data_url}
+    st, data = http_json("POST", url, {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                         body, timeout=900)
+    if st != 200:
+        raise RuntimeError(f"局部编辑失败: {json.dumps(data, ensure_ascii=False)[:400]}")
+    out = []
+    for it in data.get("data") or []:
+        if it.get("url"): out.append({"url": it["url"]})
+        elif it.get("b64_json"): out.append({"b64_json": it["b64_json"]})
+    return out
+
+def edit_validate(body):
+    """局部编辑的快速校验(同步返回 400, 而不是丢进后台任务)."""
+    if not (body.get("prompt") or "").strip(): raise ValueError("请输入要修改的内容")
+    if not body.get("image"): raise ValueError("缺少图片")
+    if not body.get("image_model"): raise ValueError("请选择生图模型")
+    provider = body.get("provider")
+    if not provider: raise ValueError("缺少服务方")
+    if not load_keys().get(provider):
+        raise ValueError(f"请先在设置里填写 {provider} 的 API Key")
+
+def edit_image(body):
+    """局部编辑: 用原图 + 选区(mask 或归一化坐标) + 修改要求, 让模型只改指定区域."""
+    provider = body.get("provider"); model = body.get("image_model")
+    prompt = (body.get("prompt") or "").strip()
+    if not prompt: raise ValueError("请输入要修改的内容")
+    if not model: raise ValueError("请选择生图模型")
+    p = get_provider(provider); key = load_keys().get(provider)
+    if not key: raise ValueError(f"请先在设置里填写 {provider} 的 API Key")
+    name, blob, mime = _resolve_image_ref(body.get("image"))
+    size = body.get("size") or "auto"
+    fmt = body.get("output_format") or "png"; quality = body.get("quality") or None
+    background = body.get("background") or None
+    box = body.get("box") or None
+    log(f"edit start | provider={provider} model={model} box={box} "
+        f"mask={'yes' if body.get('mask') else 'no'} img={name} ({len(blob)//1024}KB)")
+    if provider == "byteplus":
+        data_url = f"data:{mime};base64," + base64.b64encode(blob).decode()
+        items = _edit_byteplus(p, key, model, data_url, prompt, box, size, fmt)
+    else:
+        mask_blob = None
+        if body.get("mask"):
+            _, mask_blob, _ = _resolve_image_ref(body.get("mask"))
+        if not mask_blob and box:
+            log("edit: 未收到 mask, GPT 将按整图编辑")
+        items = _edit_openai(p, key, model, blob, mime, mask_blob, prompt, size, quality, fmt, background)
+    gid = uuid.uuid4().hex
+    saved = save_outputs(items, gid)
+    log(f"edit saved: {saved}")
+    c = db()
+    c.execute("""insert into gen(id,ts,provider,model,prompt,optimized_prompt,refs,size,output,status,quality,opt_mode,background,format,watermark)
+                 values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (gid, time.time(), provider, model, f"[编辑] {prompt}", None, 1, size,
+               json.dumps({"files": saved}, ensure_ascii=False), "ok",
+               quality, None, background, fmt, False))
+    c.commit(); c.close()
+    imgs_out = []
+    for f in saved:
+        if isinstance(f, dict):
+            imgs_out.append({"url": f"/img/{f['file']}", "download": f"/img/{f['file']}",
+                             "mb": f.get("mb"), "w": f.get("w"), "h": f.get("h")})
+        else:
+            imgs_out.append({"url": f"/img/{f}", "download": f"/img/{f}"})
+    return {"id": gid, "files": saved, "images": imgs_out, "final_prompt": prompt}
+
+def _run_job(task_id, body, kind="gen"):
+    is_edit = (kind == "edit")
+    label = "编辑" if is_edit else "生成"
     try:
         t0 = time.time()
-        res = generate(body); res["_status"] = "done"
+        res = (edit_image if is_edit else generate)(body)
+        res["_status"] = "done"
         dur = int(time.time() - t0)
         imgs = res.get("images") or []
         size = body.get("size") or ""
@@ -111,16 +236,16 @@ def _run_job(task_id, body):
                 px = f" · {im['w']}×{im['h']}"; break
         mb = next((im.get("mb") for im in imgs if im.get("mb")), None)
         msg = (f"{_short_model(body.get('image_model'))} · 尺寸 {size} · 耗时 {dur} 秒"
-               f" · 生成 {len(imgs)} 张{px}" + (f" · {mb} MB" if mb else ""))
+               f" · {label} {len(imgs)} 张{px}" + (f" · {mb} MB" if mb else ""))
         with _jobs_lock:
             _jobs[task_id] = res
-        notify("Seedream 生成完成", msg, "http://localhost:8765/#history", "查看记录")
+        notify(f"Seedream {label}完成", msg, "http://localhost:8765/#history", "查看记录")
     except Exception as e:
         err = str(e)[:160]
         res = {"_status": "failed", "error": str(e)[:300]}
         with _jobs_lock:
             _jobs[task_id] = res
-        notify("Seedream 生成失败", f"{_short_model(body.get('image_model'))} · {err}",
+        notify(f"Seedream {label}失败", f"{_short_model(body.get('image_model'))} · {err}",
                "http://localhost:8765/#history", "查看记录")
 
 DEFAULT_OPT_PROMPT = (
@@ -1250,6 +1375,15 @@ class H(BaseHTTPRequestHandler):
                 with _jobs_lock: _jobs[task_id] = {"_status": "pending", "body": body}
                 threading.Thread(target=_run_job, args=(task_id, body), daemon=True).start()
                 self._send(200, {"task_id": task_id})
+            elif path == "/api/edit":
+                edit_validate(body)
+                if body.get("sync"):
+                    self._send(200, edit_image(body))   # 同步模式(小图/调试)
+                else:
+                    task_id = uuid.uuid4().hex
+                    with _jobs_lock: _jobs[task_id] = {"_status": "pending", "body": body}
+                    threading.Thread(target=_run_job, args=(task_id, body, "edit"), daemon=True).start()
+                    self._send(200, {"task_id": task_id})
             elif path == "/api/detect": self._send(200, detect_models(body))
             elif path == "/api/netdiag": self._send(200, net_diag(body))
             elif path == "/api/bgtest": self._send(200, bg_test(body))

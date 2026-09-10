@@ -202,7 +202,22 @@
   @media (prefers-reduced-motion: reduce){
     .page.active,.hitem.anim,.provmenu,#viewer,#lightbox,.editbar,.pcard{animation:none!important}
     .hitem,.res img,.provrow{transition:none!important}
-  }
+  }  /* ---------- 局部编辑 ---------- */
+  #editor{position:fixed;inset:0;z-index:180;background:var(--bg);display:flex;flex-direction:column}
+  #editor .edbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;
+        border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px)}
+  #editor .edstage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;padding:8px}
+  #editor .edwrap{position:relative;line-height:0;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+  #editor .edwrap img{display:block;pointer-events:none;-webkit-user-drag:none}
+  #editor .edwrap canvas{position:absolute;left:0;top:0;touch-action:none;cursor:crosshair}
+  #editor .edpanel{border-top:1px solid var(--line);padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:var(--bg)}
+  #editor .edrow{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  #editor .edtool{padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--card);
+        font-size:13px;color:var(--txt);cursor:pointer;transition:.15s}
+  #editor .edtool.on{border-color:var(--acc);color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent)}
+  #editor input[type=range]{flex:1;min-width:80px;accent-color:var(--acc)}
+  #editor textarea{width:100%;min-height:52px;margin:0;font-size:14px}
+  @media (prefers-reduced-motion: no-preference){ #editor{animation:swSlideIn .24s cubic-bezier(.22,.61,.36,1)} #editor.closing{animation:swSlideOut .2s cubic-bezier(.22,.61,.36,1) forwards} }
 </style>
 </head>
 <body>
@@ -358,6 +373,7 @@ const ICONS = {
   dl:'<svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
   copy:'<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
 
+  edit:'<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>'
 };
 function icon(name){ return ICONS[name] || ''; }
@@ -456,6 +472,7 @@ function navBack(){ if(_navDepth>0){ try{ history.back(); }catch(e){} } }
 function navConsume(){ if(_navDepth>0){ _navSilent++; try{ history.back(); }catch(e){} } }
 // 关闭最上层视图; 返回 true = 已处理(不退出页面)
 function closeTopmost(){
+  var ov=document.getElementById('editor'); if(ov){ closeImageEditor(true); return true; }
   var lb=document.getElementById('lightbox'); if(lb){ closeLightbox(true); return true; }
   var v=document.getElementById('viewer'); if(v){ closeViewer(true); return true; }
   var m=document.querySelector('.provmenu'); if(m){ closeProvMenu(true); return true; }
@@ -731,7 +748,9 @@ function renderResults(box, d){ const total=Math.round((Date.now()-_g0)/1000); b
     const img=document.createElement('img'); img.src=im.url; img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url);
     const a=document.createElement('a'); a.href=im.download; a.download=''; a.innerHTML=icon('dl')+'保存';
     a.onclick=function(e){ e.preventDefault(); saveImageFile(im.download, 'seedream.png'); };
-    w.append(img,a); box.appendChild(w); }); }
+    const ed=document.createElement('a'); ed.href='#'; ed.innerHTML=icon('edit')+'局部编辑';
+    ed.onclick=function(e){ e.preventDefault(); openImageEditor(im.url); };
+    w.append(img,a,ed); box.appendChild(w); }); }
 function pollTask(taskId, box, btnAll){
   const iv=setInterval(async ()=>{ try{ const t=await jget('/api/task/'+taskId); const st=t._status;
     if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t); notifyBrowser('生成完成','已生成 '+(t.images||[]).length+' 张');
@@ -765,6 +784,235 @@ async function generate(){
     pollTask(sub.task_id, box, btnAll);
   }catch(e){ genTimerStop(); box.innerHTML='<div class="small-note">提交失败: '+esc(e.message)+'</div>'; toast('提交失败'); btnAll.forEach(b=>b.disabled=false); }
   finally{ btnAll.forEach(b=>b.disabled=false); }
+}
+
+/* ---------- 局部编辑 ---------- */
+let ED = null;
+function openImageEditor(ref){
+  if(ED || !ref) return;
+  const ov=document.createElement('div'); ov.id='editor';
+  ov.innerHTML=`
+   <div class="edbar">
+     <button class="icon-btn" onclick="closeImageEditor()" style="box-shadow:none;width:40px;height:40px"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+     <div style="flex:1;text-align:center;min-width:0">
+       <div style="font-size:14px;font-weight:600">局部编辑</div>
+       <div class="small-note" id="edModel" style="margin:0;font-size:11px"></div>
+     </div>
+     <button class="btn primary" id="edSend" onclick="edSubmit()">发送</button>
+   </div>
+   <div class="edstage" id="edStage">
+     <div class="edwrap" id="edWrap">
+       <img id="edImg" src="${esc(ref)}">
+       <canvas id="edCanvas"></canvas>
+     </div>
+   </div>
+   <div class="edpanel">
+     <div class="edrow">
+       <button class="edtool on" id="edT_brush" onclick="edTool('brush')">画笔</button>
+       <button class="edtool" id="edT_rect" onclick="edTool('rect')">框选</button>
+       <span style="font-size:12px;color:var(--mut)">粗细</span>
+       <input type="range" id="edSize" min="8" max="140" value="40">
+       <button class="btn small" onclick="edUndo()">撤销</button>
+       <button class="btn small" onclick="edClear()">清空</button>
+     </div>
+     <textarea id="edPrompt" placeholder="描述要改成什么，例如：把这里换成一只猫 / 把这件衣服改成红色"></textarea>
+     <div class="small-note" id="edHint"></div>
+   </div>`;
+  document.body.appendChild(ov);
+  navPush();
+  ED = { ref:ref, tool:'brush', brush:40, strokes:[], rect:null, drag:null,
+         cw:0, ch:0, nat:{w:0,h:0}, busy:false, src:ref };
+  const img=document.getElementById('edImg');
+  img.onload=function(){ edLayout(); };
+  img.onerror=function(){ toast('图片加载失败'); };
+  edBind();
+  edUpdateHint();
+  window.addEventListener('resize', edRelayoutSoon);
+}
+function closeImageEditor(fromBack){
+  var ov=document.getElementById('editor'); if(!ov) return;
+  if(fromBack !== true){ navBack(); return; }
+  ED=null;
+  ov.classList.add('closing');
+  setTimeout(function(){ if(ov.parentNode) ov.remove(); }, 220);
+}
+function edRelayoutSoon(){ setTimeout(edLayout, 60); }
+function edUpdateHint(){
+  const el=document.getElementById('edHint'); if(!el) return;
+  const p=$('provider') ? ($('provider').value||'') : '';
+  const conf=(MODELS[p]||{}); const lbl=conf.label||p;
+  const m=$('imageModel') ? ($('imageModel').value||'') : '';
+  const isBP = (p==='byteplus');
+  const mm=document.getElementById('edModel');
+  if(mm) mm.textContent=lbl+' · '+m;
+  el.textContent = isBP
+    ? '在图上涂抹或框选要修改的区域 → 模型按归一化坐标只改该区域'
+    : '在图上涂抹或框选要修改的区域 → 以遮罩精确重绘（需中转支持 mask 参数）';
+}
+function edLayout(){
+  const img=document.getElementById('edImg'), cv=document.getElementById('edCanvas');
+  const stage=document.getElementById('edStage'), wrap=document.getElementById('edWrap');
+  if(!img||!cv||!stage) return;
+  ED.nat={w:img.naturalWidth||1024, h:img.naturalHeight||1024};
+  const CAP=2048;
+  let cw=ED.nat.w, ch=ED.nat.h;
+  const long=Math.max(cw,ch);
+  if(long>CAP){ const s=CAP/long; cw=Math.round(cw*s); ch=Math.round(ch*s); }
+  ED.cw=cw; ED.ch=ch;
+  cv.width=cw; cv.height=ch;
+  const pad=16;
+  const availW=Math.max(80, stage.clientWidth-pad), availH=Math.max(80, stage.clientHeight-pad);
+  const ds=Math.min(availW/cw, availH/ch, 1);
+  const dw=Math.round(cw*ds), dh=Math.round(ch*ds);
+  img.style.width=dw+'px'; img.style.height=dh+'px';
+  cv.style.width=dw+'px'; cv.style.height=dh+'px';
+  ED.dispW=dw; ED.dispH=dh;
+  edRedraw();
+}
+function edPos(e){
+  const cv=document.getElementById('edCanvas'); const r=cv.getBoundingClientRect();
+  return { x:(e.clientX-r.left)/r.width*cv.width, y:(e.clientY-r.top)/r.height*cv.height };
+}
+function edDrawShapes(ctx, mode){
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  const stroke = mode==='mask' ? 'rgba(0,0,0,1)' : 'rgba(255,64,129,.55)';
+  (ED.strokes||[]).forEach(function(st){
+    if(!st.pts.length) return;
+    ctx.lineWidth=st.w; ctx.strokeStyle=stroke;
+    if(st.pts.length===1){ ctx.fillStyle=stroke; ctx.beginPath();
+      ctx.arc(st.pts[0].x, st.pts[0].y, st.w/2, 0, Math.PI*2); ctx.fill(); return; }
+    ctx.beginPath(); ctx.moveTo(st.pts[0].x, st.pts[0].y);
+    for(let i=1;i<st.pts.length;i++) ctx.lineTo(st.pts[i].x, st.pts[i].y);
+    ctx.stroke();
+  });
+  if(ED.rect){
+    const r=ED.rect, x=Math.min(r.x1,r.x2), y=Math.min(r.y1,r.y2),
+          w=Math.abs(r.x2-r.x1), h=Math.abs(r.y2-r.y1);
+    if(mode==='mask'){ ctx.fillStyle='rgba(0,0,0,1)'; ctx.fillRect(x,y,w,h); }
+    else{ ctx.fillStyle='rgba(255,64,129,.3)'; ctx.fillRect(x,y,w,h);
+          ctx.strokeStyle='rgba(255,64,129,.9)'; ctx.lineWidth=Math.max(2, ED.brush/4);
+          ctx.strokeRect(x,y,w,h); }
+  }
+}
+function edRedraw(){
+  const cv=document.getElementById('edCanvas'); if(!cv||!ED) return;
+  const x=cv.getContext('2d'); x.clearRect(0,0,cv.width,cv.height);
+  edDrawShapes(x,'view');
+}
+function edBind(){
+  const cv=document.getElementById('edCanvas'); if(!cv) return;
+  cv.addEventListener('pointerdown', function(e){
+    if(!ED || ED.busy || !ED.cw) return; e.preventDefault();
+    cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
+    ED.brush=parseInt($('edSize').value||'40',10);
+    const p=edPos(e);
+    if(ED.tool==='rect'){ ED.drag={type:'rect', x1:p.x, y1:p.y, x2:p.x, y2:p.y}; ED.rect={x1:p.x,y1:p.y,x2:p.x,y2:p.y}; }
+    else { ED.drag={type:'brush'}; ED.strokes.push({w:ED.brush, pts:[p]}); }
+    edRedraw();
+  });
+  cv.addEventListener('pointermove', function(e){
+    if(!ED || !ED.drag) return; e.preventDefault();
+    const p=edPos(e);
+    if(ED.drag.type==='rect'){ ED.rect.x2=p.x; ED.rect.y2=p.y; }
+    else { const st=ED.strokes[ED.strokes.length-1]; if(st) st.pts.push(p); }
+    edRedraw();
+  });
+  function up(e){
+    if(!ED || !ED.drag) return;
+    if(ED.drag.type==='rect' && ED.rect){
+      const r=ED.rect;
+      if(Math.abs(r.x2-r.x1)<6 && Math.abs(r.y2-r.y1)<6){ ED.rect=null; }  // 误触
+    }
+    ED.drag=null; edRedraw();
+  }
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', up);
+  cv.addEventListener('pointerleave', function(e){ if(ED && ED.drag && ED.drag.type==='brush') return; up(e); });
+}
+function edTool(t){
+  if(!ED) return; ED.tool=t;
+  document.getElementById('edT_brush').classList.toggle('on', t==='brush');
+  document.getElementById('edT_rect').classList.toggle('on', t==='rect');
+}
+function edUndo(){
+  if(!ED) return;
+  if(ED.rect){ ED.rect=null; } else { ED.strokes.pop(); }
+  edRedraw();
+}
+function edClear(){ if(!ED) return; ED.strokes=[]; ED.rect=null; edRedraw(); }
+function edHasSel(){ return ED && (ED.strokes.length>0 || !!ED.rect); }
+function edBuildMask(){
+  const c=document.createElement('canvas'); c.width=ED.cw; c.height=ED.ch;
+  const x=c.getContext('2d');
+  x.fillStyle='#000'; x.fillRect(0,0,ED.cw,ED.ch);
+  x.globalCompositeOperation='destination-out';
+  edDrawShapes(x,'mask');
+  try{ return c.toDataURL('image/png'); }catch(e){ return null; }
+}
+function edBox(){
+  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+  (ED.strokes||[]).forEach(function(st){ st.pts.forEach(function(p){
+    if(p.x<x1)x1=p.x; if(p.y<y1)y1=p.y; if(p.x>x2)x2=p.x; if(p.y>y2)y2=p.y; }); });
+  if(ED.rect){ x1=Math.min(x1,ED.rect.x1,ED.rect.x2); y1=Math.min(y1,ED.rect.y1,ED.rect.y2);
+               x2=Math.max(x2,ED.rect.x1,ED.rect.x2); y2=Math.max(y2,ED.rect.y1,ED.rect.y2); }
+  if(x2<=x1 || y2<=y1) return null;
+  const nx=function(v,w){ return Math.max(0, Math.min(999, Math.round(v/w*999))); };
+  return [nx(x1,ED.cw), nx(y1,ED.ch), nx(x2,ED.cw), nx(y2,ED.ch)];
+}
+function edImageRef(){
+  // 未超限: 直接用原引用; 超限: 从画布重编码(保证与 mask 尺寸一致)
+  if(Math.max(ED.nat.w,ED.nat.h)<=2048) return ED.src;
+  const c=document.createElement('canvas'); c.width=ED.cw; c.height=ED.ch;
+  const x=c.getContext('2d');
+  x.drawImage(document.getElementById('edImg'),0,0,ED.cw,ED.ch);
+  return c.toDataURL('image/jpeg',0.95);
+}
+async function edSubmit(){
+  if(!ED || ED.busy) return;
+  if(!edHasSel()){ toast('请先在图上涂抹或框选要修改的区域'); return; }
+  const prompt=($('edPrompt').value||'').trim();
+  if(!prompt){ toast('请输入要修改的内容'); return; }
+  const p=$('provider').value, m=$('imageModel').value;
+  const isBP=(p==='byteplus');
+  ED.busy=true;
+  const btn=$('edSend'); btn.disabled=true; btn.textContent='提交中…';
+  const hint=$('edHint'); hint.textContent='正在提交…';
+  try{
+    const body={ provider:p, image_model:m, prompt:prompt, image:edImageRef(),
+                 box:edBox(), size:'auto', output_format:'png' };
+    if(!isBP){ const mk=edBuildMask(); if(mk) body.mask=mk; }
+    const sub=await jpost('/api/edit', body, 60000);
+    edPoll(sub.task_id, btn, hint);
+  }catch(e){
+    ED.busy=false; btn.disabled=false; btn.textContent='发送';
+    hint.textContent='提交失败: '+e.message;
+  }
+}
+function edPoll(taskId, btn, hint){
+  const iv=setInterval(async function(){
+    try{
+      const t=await jget('/api/task/'+taskId); const st=t._status;
+      if(st==='done'){
+        clearInterval(iv);
+        const im=(t.images||[])[0];
+        if(im){
+          const img=document.getElementById('edImg');
+          img.src=im.url+'?t='+Date.now();
+          img.onload=function(){ ED.src=im.url; ED.nat={w:img.naturalWidth,h:img.naturalHeight};
+            ED.strokes=[]; ED.rect=null; edLayout(); };
+          hint.textContent='✓ 已完成，可以继续改这一版（已存入记录）';
+          toast('局部编辑完成');
+          loadHistory();
+        } else { hint.textContent='完成，但没有返回图片'; }
+        ED.busy=false; btn.disabled=false; btn.textContent='发送';
+      } else if(st==='failed'){
+        clearInterval(iv);
+        ED.busy=false; btn.disabled=false; btn.textContent='发送';
+        hint.textContent='失败: '+String(t.error||'未知错误').slice(0,180);
+        toast('局部编辑失败');
+      }
+    }catch(e){}
+  }, 3000);
 }
 
 /* ---------- 历史 ---------- */
@@ -918,7 +1166,10 @@ function viewImage(src){
     v.style.cssText='position:fixed;inset:0;z-index:200;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;';
     document.body.appendChild(v); navPush(); }
   lbScale=1; lbTx=0; lbTy=0; lbMoved=false;
-  v.innerHTML='<img id="lbImg" src="'+esc(src)+'" style="position:absolute;left:50%;top:50%;max-width:100vw;max-height:100vh;object-fit:contain;will-change:transform">';
+  v.innerHTML='<img id="lbImg" src="'+esc(src)+'" style="position:absolute;left:50%;top:50%;max-width:100vw;max-height:100vh;object-fit:contain;will-change:transform">'
+    +'<button id="lbEdit" class="btn primary" style="position:absolute;right:14px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:5;box-shadow:0 6px 20px rgba(0,0,0,.4)">'+icon('edit')+' 局部编辑</button>';
+  document.getElementById('lbEdit').onclick=function(e){ e.stopPropagation(); closeLightbox(); setTimeout(function(){ openImageEditor(src); }, 260); };
+  document.getElementById('lbEdit').ontouchstart=function(e){ e.stopPropagation(); };
   lbImg=document.getElementById('lbImg');
   function apply(){ const s=lbScale; lbImg.style.transform='translate(-50%,-50%) translate('+lbTx+'px,'+lbTy+'px) scale('+s+')'; }
   function clamp(){
