@@ -217,6 +217,9 @@
   #editor .edtool.on{border-color:var(--acc);color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent)}
   #editor input[type=range]{flex:1;min-width:80px;accent-color:var(--acc)}
   #editor textarea{width:100%;min-height:52px;margin:0;font-size:14px}
+  #editor .edbusy{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:10px;background:rgba(0,0,0,.45);backdrop-filter:blur(2px);pointer-events:none;
+        font-size:13px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);font-variant-numeric:tabular-nums}
   @media (prefers-reduced-motion: no-preference){ #editor{animation:swSlideIn .24s cubic-bezier(.22,.61,.36,1)} #editor.closing{animation:swSlideOut .2s cubic-bezier(.22,.61,.36,1) forwards} }
 </style>
 </head>
@@ -879,6 +882,7 @@ function closeImageEditor(fromBack){
   var ov=document.getElementById('editor'); if(!ov) return;
   if(fromBack !== true){ navBack(); return; }
   ED=null;
+  clearInterval(_edTimer); _edTimer=null;
   ov.classList.add('closing');
   setTimeout(function(){ if(ov.parentNode) ov.remove(); }, 220);
 }
@@ -1028,6 +1032,32 @@ function edImageRef(){
   x.drawImage(document.getElementById('edImg'),0,0,ED.cw,ED.ch);
   return c.toDataURL('image/jpeg',0.95);
 }
+/* ---- 编辑进度: 计时 + 图区遮罩 ---- */
+let _edTimer=null, _edT0=0, _edStage='正在重绘';
+function edBusyOverlay(on){
+  const wrap=document.getElementById('edWrap'); if(!wrap) return;
+  let ov=document.getElementById('edBusy');
+  if(on){
+    if(ov) return;
+    ov=document.createElement('div'); ov.id='edBusy'; ov.className='edbusy';
+    ov.innerHTML='<span class="loader" style="width:26px;height:26px;border-width:3px"></span><span id="edBusyTxt">正在重绘…</span>';
+    wrap.appendChild(ov);
+  } else if(ov) ov.remove();
+}
+function edBusyStart(stage){
+  if(stage) _edStage=stage;
+  clearInterval(_edTimer);
+  _edT0=Date.now();
+  const tick=function(){
+    if(!document.getElementById('editor')){ clearInterval(_edTimer); _edTimer=null; return; }
+    const s=Math.round((Date.now()-_edT0)/1000);
+    const b=document.getElementById('edBusyTxt'); if(b) b.textContent=_edStage+' · 已用时 '+s+' 秒';
+    const h=document.getElementById('edHint');
+    if(h && ED && ED.busy) h.textContent=_edStage+' · 已用时 '+s+' 秒';
+  };
+  tick(); _edTimer=setInterval(tick, 1000);
+}
+function edBusyStop(){ clearInterval(_edTimer); _edTimer=null; edBusyOverlay(false); }
 async function edSubmit(){
   if(!ED || ED.busy) return;
   if(!edHasSel()){ toast('请先在图上涂抹或框选要修改的区域'); return; }
@@ -1037,44 +1067,61 @@ async function edSubmit(){
   if(!p || !m){ toast('请选择重绘模型'); return; }
   const isBP=(p==='byteplus');
   ED.busy=true;
-  const btn=$('edSend'); btn.disabled=true; btn.textContent='提交中…';
-  const hint=$('edHint'); hint.textContent='正在提交…';
+  const btn=$('edSend');
+  btn.disabled=true;
+  btn.innerHTML='<span class="loader" style="width:14px;height:14px;border-width:2px"></span> 重绘中';
+  edBusyOverlay(true);
+  edBusyStart('正在提交');
   try{
     const body={ provider:p, image_model:m, prompt:prompt, image:edImageRef(),
                  box:edBox(), size:'auto', output_format:'png' };
     if(!isBP){ const mk=edBuildMask(); if(mk) body.mask=mk; }
     const sub=await jpost('/api/edit', body, 60000);
-    edPoll(sub.task_id, btn, hint);
+    edBusyStart('正在重绘');
+    edPoll(sub.task_id, btn);
   }catch(e){
     ED.busy=false; btn.disabled=false; btn.textContent='发送';
-    hint.textContent='提交失败: '+e.message;
+    edBusyStop();
+    $('edHint').textContent='提交失败: '+e.message;
   }
 }
-function edPoll(taskId, btn, hint){
+function edPoll(taskId, btn){
+  let fails=0;
   const iv=setInterval(async function(){
+    if(!ED){ clearInterval(iv); return; }          // 编辑器已关闭
     try{
-      const t=await jget('/api/task/'+taskId); const st=t._status;
+      const t=await jget('/api/task/'+taskId); const st=t._status; fails=0;
       if(st==='done'){
         clearInterval(iv);
         const im=(t.images||[])[0];
         if(im){
           const img=document.getElementById('edImg');
-          img.src=im.url+'?t='+Date.now();
-          img.onload=function(){ ED.src=im.url; ED.nat={w:img.naturalWidth,h:img.naturalHeight};
+          img.onload=function(){ if(!ED) return; ED.src=im.url;
+            ED.nat={w:img.naturalWidth,h:img.naturalHeight};
             ED.strokes=[]; ED.rect=null; edLayout(); };
-          hint.textContent='✓ 已完成，可以继续改这一版（已存入记录）';
-          toast('局部编辑完成');
-          loadHistory();
-        } else { hint.textContent='完成，但没有返回图片'; }
-        ED.busy=false; btn.disabled=false; btn.textContent='发送';
+          img.src=im.url+'?t='+Date.now();
+          edBusyStop();
+          ED.busy=false; btn.disabled=false; btn.textContent='发送';
+          $('edHint').textContent='✓ 已完成 · 可以继续改这一版（已存入记录）';
+          toast('局部编辑完成'); loadHistory();
+        } else {
+          edBusyStop(); ED.busy=false; btn.disabled=false; btn.textContent='发送';
+          $('edHint').textContent='完成，但没有返回图片';
+        }
       } else if(st==='failed'){
         clearInterval(iv);
+        edBusyStop();
         ED.busy=false; btn.disabled=false; btn.textContent='发送';
-        hint.textContent='失败: '+String(t.error||'未知错误').slice(0,180);
+        $('edHint').textContent='失败: '+String(t.error||'未知错误').slice(0,180);
         toast('局部编辑失败');
       }
-    }catch(e){}
-  }, 3000);
+    }catch(e){
+      fails++;
+      if(fails>=5){ clearInterval(iv); edBusyStop();
+        if(ED){ ED.busy=false; btn.disabled=false; btn.textContent='发送';
+          $('edHint').textContent='轮询中断，请到「记录」里查看结果'; } }
+    }
+  }, 2500);
 }
 
 /* ---------- 历史 ---------- */
