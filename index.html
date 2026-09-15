@@ -1604,49 +1604,81 @@ function modelSection(key, type, label){
     </div>
   </div>`;
 }
-/* ---------- API Key 掩码显示 ---------- */
+/* ---------- API Key: 黑点掩码 + 眼睛看原文 ---------- */
 const KEY_MASK = '••••••••••••••••';
 let HAS_KEY = {};                       // provider -> 是否已保存 Key
+let KEY_CACHE = {};                     // provider -> 明文(本次会话内缓存)
 async function loadKeyStatus(){
   try{ const s=await jget('/api/settings'); const p=(s&&s.providers)||{};
     Object.keys(p).forEach(function(k){ HAS_KEY[k]=!!p[k].has_key; }); }catch(e){}
 }
-// 取当前该用的 Key: 用户新输入的 > 已保存的(空则交给后端用存好的)
+function keyState(key){
+  const inp=document.getElementById('pkey_'+key);
+  return inp ? (inp.dataset.state||'') : '';
+}
+// 该用哪个 Key: 用户正在编辑 -> 他的输入; 否则空(交给后端用已存好的)
 function currentKey(key){
   const inp=document.getElementById('pkey_'+key);
-  let typed='';
-  if(inp && inp.dataset.masked!=='1') typed=(inp.value||'').trim();
-  return (keyDraft[key]||'').trim() || typed || '';
+  if(inp && inp.dataset.state==='edit') return (inp.value||'').trim();
+  return (keyDraft[key]||'').trim();
 }
-function keyIsMasked(key){
-  const inp=document.getElementById('pkey_'+key);
-  return !!(inp && inp.dataset.masked==='1');
+function _setEye(key, on){
+  const b=document.getElementById('peye_'+key); if(!b) return;
+  b.innerHTML=icon(on?'eyeOff':'eye');
+  b.classList.toggle('on', !!on);
+  b.title = on ? '隐藏' : '显示原文';
 }
-function toggleKeyVis(key){
-  const inp=document.getElementById('pkey_'+key);
-  const btn=document.getElementById('peye_'+key);
-  if(!inp) return;
-  const show = (inp.type==='password');
-  inp.type = show ? 'text' : 'password';
-  if(btn){ btn.innerHTML=icon(show ? 'eyeOff' : 'eye');
-    btn.title = show ? '隐藏' : '显示';
-    btn.classList.toggle('on', show); }
+function _toMasked(key){
+  const inp=document.getElementById('pkey_'+key); if(!inp) return;
+  if(HAS_KEY[key]){ inp.type='password'; inp.value=KEY_MASK; inp.dataset.state='masked'; inp.dataset.masked='1'; }
+  else { inp.type='password'; inp.value=''; inp.dataset.state=''; inp.dataset.masked=''; }
+  _setEye(key, false);
+}
+async function toggleKeyVis(key){
+  const inp=document.getElementById('pkey_'+key); if(!inp) return;
+  const st=inp.dataset.state||'';
+  if(st==='revealed'){ _toMasked(key); return; }        // 再看一次=收起
+  if(st==='edit' || !HAS_KEY[key]){                     // 正在编辑/没存过 -> 只切明文
+    const show=(inp.type==='password');
+    inp.type = show ? 'text' : 'password';
+    _setEye(key, show);
+    return;
+  }
+  // 掩码态 + 已存 Key -> 拉取真正的 Key 原文
+  const b=document.getElementById('peye_'+key);
+  if(b) b.disabled=true;
+  try{
+    let k=KEY_CACHE[key];
+    if(!k){ const r=await jget('/api/key?provider='+encodeURIComponent(key)); k=(r&&r.key)||''; KEY_CACHE[key]=k; }
+    if(!k){ toast('该服务方还没有保存 Key'); return; }
+    inp.value=k; inp.type='text'; inp.dataset.state='revealed'; inp.dataset.masked='';
+    _setEye(key, true);
+  }catch(e){ toast('读取失败: '+(e.message||e)); }
+  finally{ if(b) b.disabled=false; }
 }
 function bindKeyField(card, key){
   const inp=card.querySelector('#pkey_'+key); if(!inp) return;
-  if(keyDraft[key]){ inp.value=keyDraft[key]; }
-  else if(HAS_KEY[key]){ inp.value=KEY_MASK; inp.dataset.masked='1'; }
+  if(keyDraft[key]){ inp.value=keyDraft[key]; inp.type='password'; inp.dataset.state='edit'; }
+  else if(HAS_KEY[key]){ inp.value=KEY_MASK; inp.type='password'; inp.dataset.state='masked'; inp.dataset.masked='1'; }
+  else { inp.dataset.state=''; }
   inp.addEventListener('focus', function(){
-    if(inp.dataset.masked==='1'){       // 开始输入就清掉假掩码
-      inp.value=''; inp.dataset.masked=''; keyDraft[key]='';
-      if(inp.type==='password') toggleKeyVis(key);   // 编辑时自动明文, 方便核对
+    if(inp.dataset.state==='masked'){          // 开始输入就清掉假黑点
+      inp.value=''; inp.dataset.masked=''; inp.dataset.state='edit'; keyDraft[key]='';
+      if(inp.type==='password'){ inp.type='text'; _setEye(key,true); }   // 编辑时明文便于核对
+    } else if(inp.dataset.state==='revealed'){
+      inp.dataset.state='edit'; keyDraft[key]=inp.value;                 // 基于原文修改
     }
   });
   inp.addEventListener('input', function(){
-    inp.dataset.masked=''; keyDraft[key]=inp.value;
+    inp.dataset.masked=''; inp.dataset.state='edit'; keyDraft[key]=inp.value;
   });
   const btn=card.querySelector('#peye_'+key);
   if(btn) btn.addEventListener('click', function(e){ e.preventDefault(); toggleKeyVis(key); });
+}
+function resetKeyField(key){
+  delete KEY_CACHE[key];
+  const inp=document.getElementById('pkey_'+key);
+  if(inp){ delete keyDraft[key]; inp.dataset.masked=''; _toMasked(key); }
 }
 
 function providerCard(key){
@@ -1833,20 +1865,16 @@ async function saveProvider(key){
   CONFIG[key].base_url=document.getElementById('pbase_'+key).value.trim();
   CONFIG[key].image_models=readList(key,'image_models');
   CONFIG[key].chat_models=readList(key,'chat_models');
-  // 掩码状态下不要提交(否则会把假点存成真 Key)
+  // 只在「用户编辑过」时才提交 Key; 掩码/原文状态一律不动已存的值
   const inp=document.getElementById('pkey_'+key);
-  let v = keyIsMasked(key) ? '' : ((inp&&inp.value)||'').trim();
+  let v = keyState(key)==='edit' ? ((inp&&inp.value)||'').trim() : '';
   v = v || (keyDraft[key]||'').trim();
   if(v) keyDraft[key]=v;
   try{
     await jput('/api/config',CONFIG);
     if(v){
       await jpost('/api/settings',{keys:{[key]:v}});
-      HAS_KEY[key]=true; delete keyDraft[key];          // 已存服务端, 前端只留掩码
-      const i2=document.getElementById('pkey_'+key);
-      if(i2){ i2.value=KEY_MASK; i2.dataset.masked='1'; i2.type='password'; }
-      const b2=document.getElementById('peye_'+key);
-      if(b2){ b2.innerHTML=icon('eye'); b2.classList.remove('on'); b2.title='显示'; }
+      HAS_KEY[key]=true; resetKeyField(key);            // 存完立刻变回黑点
     }
     toast('已保存'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions();
   }catch(e){ toast('保存失败: '+e.message); } }

@@ -1143,6 +1143,20 @@ def bg_test(body):
 def settings():
     keys = load_keys()
     return {"providers": {k: {"has_key": bool(v)} for k, v in keys.items()}}
+
+def _is_loopback(ip):
+    """判断是否本机访问(明文 Key 只允许本机读取)."""
+    ip = (ip or "").strip()
+    if ip in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"):
+        return True
+    return ip.startswith("127.")
+
+def reveal_key(provider):
+    """返回明文 Key —— 仅限本机(网页在手机上走 localhost, 局域网访问会被拒绝)."""
+    if not provider or provider not in CONFIG:
+        raise ValueError("未知服务方")
+    return {"key": load_keys().get(provider, "")}
+
 def set_settings(body):
     cur = load_keys()
     for k, v in (body.get("keys") or {}).items():
@@ -1353,6 +1367,18 @@ class H(BaseHTTPRequestHandler):
             elif path == "/api/config": self._send(200, config_get())
             elif path == "/api/prefs": self._send(200, prefs_get())
             elif path == "/api/settings": self._send(200, settings())
+            elif path == "/api/key":
+                ip = self.client_address[0] if self.client_address else ""
+                if not _is_loopback(ip):
+                    log(f"reveal_key 被拒绝: 非本机访问 {ip}")
+                    self._send(403, {"error": "明文 Key 仅允许在本机(localhost)查看"})
+                else:
+                    from urllib.parse import parse_qs
+                    qs = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+                    try:
+                        self._send(200, reveal_key((qs.get("provider") or [""])[0]))
+                    except ValueError as e:
+                        self._send(400, {"error": str(e)})
             elif path == "/api/history": self._send(200, history())
             elif path == "/api/tasks":
                 with _jobs_lock:
@@ -1440,4 +1466,8 @@ if __name__ == "__main__":
     print(f"  相册目录: {MEDIA}")
     print(f"  浏览器访问: http://localhost:{PORT}")
     print("=" * 58)
+    if HOST not in ("127.0.0.1", "localhost", "::1"):
+        log(f"⚠ HOST={HOST} —— 网关对局域网开放，同网络设备可访问本机配置与生图接口(会消耗你的额度)。"
+            f" 如只在本机使用，建议改用 HOST=127.0.0.1 启动。")
+        print(f"  ⚠ 注意: HOST={HOST} 对局域网开放 (仅本机用可设 HOST=127.0.0.1)")
     ThreadingHTTPServer((HOST, PORT), H).serve_forever()
