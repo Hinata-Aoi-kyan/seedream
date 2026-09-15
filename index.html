@@ -192,9 +192,9 @@
   .sect{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
   .sect>h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--txt);display:flex;align-items:center;gap:7px}
   .sect>h4 .cnt{font-size:11px;font-weight:400;color:var(--mut);background:var(--card2);border:1px solid var(--line);border-radius:7px;padding:1px 7px}
-  .tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .tools .btn{min-height:42px;white-space:nowrap;padding:7px 8px;overflow:hidden}
-  .tools .span2{grid-column:1 / -1}
+  .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .tools .btn{min-height:42px;white-space:nowrap;padding:6px 4px;overflow:hidden;font-size:12px;gap:4px}
+  .tools .btn svg{width:13px;height:13px}
   .toolpanel{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);animation:swFadeUp .2s ease}
   .toolhead{font-size:12px;font-weight:600;color:var(--mut);margin-bottom:8px}
   .btn.on{border-color:var(--acc);color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent)}
@@ -425,6 +425,7 @@ const ICONS = {
   droplet:'<svg viewBox="0 0 24 24"><path d="M12 3.5s6.2 6.3 6.2 10.2a6.2 6.2 0 0 1-12.4 0C5.8 9.8 12 3.5 12 3.5z"/><path d="M9 14.5h6"/></svg>',
   more:'<svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="18.5" r="1.3"/></svg>',
   warn:'<svg viewBox="0 0 24 24"><path d="M12 4.5l8.5 15h-17z"/><path d="M12 10.5v4M12 17.3h.01"/></svg>',
+  ban:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6.2 17.8L17.8 6.2"/></svg>',
   search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
   history:'<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6l-2.5 2.5"/><path d="M3.5 8.5V4.5M3.5 8.5h4"/><path d="M12 7.5v4.5l3 1.8"/></svg>',
@@ -1491,7 +1492,8 @@ function toggleProvMenu(key, evt){
   if(document.querySelector('.provmenu')){ navBack(); return; }   // 再点一次=关闭
   const p=CONFIG[key]; const enabled=p.enabled!==false;
   const m=document.createElement('div'); m.className='provmenu';
-  const dis=document.createElement('div'); dis.textContent= enabled?'禁用':'启用';
+  const dis=document.createElement('div');
+  dis.innerHTML=(enabled ? icon('ban') : icon('check')) + (enabled ? '禁用' : '启用');
   dis.onclick=async(e)=>{ e.stopPropagation(); closeProvMenu(); p.enabled = enabled?false:true; renderSettings(); try{ await jput('/api/config',CONFIG); toast('已保存'); MODELS=await jget('/api/models'); fillProviders(); }catch(e2){ toast('保存失败: '+e2.message); } };
   const del=document.createElement('div'); del.className='danger'; del.innerHTML=icon('trash')+'删除';
   del.onclick=async(e)=>{ e.stopPropagation(); if(!confirm('删除提供方 '+key+' ?')) return; closeProvMenu(); delete CONFIG[key]; settingsView='list'; editingProvider=null; renderSettings(); try{ await jput('/api/config',CONFIG); toast('已删除'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions(); }catch(e2){ toast('保存失败: '+e2.message); } };
@@ -1607,7 +1609,7 @@ function providerCard(key){
       <div class="tools">
         <button class="btn small" id="tb_det_${key}" onclick="detect('${key}')">${icon('search')}检测模型</button>
         <button class="btn small" id="tb_diag_${key}" onclick="diagnose('${key}')">${icon('pulse')}诊断</button>
-        <button class="btn small span2" id="tb_bg_${key}" onclick="bgTest('${key}')">${icon('droplet')}透明背景检测</button>
+        <button class="btn small" id="tb_bg_${key}" onclick="bgTest('${key}')">${icon('droplet')}透明检测</button>
       </div>
       <div id="tool_${key}" class="toolpanel hide"></div>
     </div>
