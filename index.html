@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Seedream Web</title>
+<script>
+/* 首屏防闪烁: 在样式前就按「跟随系统/浅色/深色」定好主题 */
+(function(){ try{
+  var m = localStorage.getItem('sw_theme_mode') || 'system';
+  var sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var dark = (m==='dark') || (m==='system' && sysDark);
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+}catch(e){} })();
+</script>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0f1115">
 <meta name="mobile-web-app-capable" content="yes">
@@ -11,10 +20,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   :root[data-theme="dark"]{
+    color-scheme:dark;
     --bg:#0f1115;--card:#1a1d24;--card2:#22262f;--line:#2c313b;
     --txt:#e8ebf0;--mut:#9aa3b2;--acc:#4c8dff;--acc2:#6ee7b7;--bad:#ff6b6b;--deep:#141720;
   }
   :root[data-theme="light"]{
+    color-scheme:light;
     --bg:#f4f5f8;--card:#ffffff;--card2:#f0f1f5;--line:#dde1e8;
     --txt:#1b1f27;--mut:#6a7280;--acc:#2563eb;--acc2:#0d9488;--bad:#dc2626;--deep:#ffffff;
   }
@@ -169,7 +180,7 @@
   .addbar{display:flex;gap:8px;margin-top:10px;align-items:center}
   /* ---------- 设置页: 二级视图切换动画 + 分区 ---------- */
   .sview{animation:swSlideIn .26s cubic-bezier(.22,.61,.36,1)}
-  .sview.closing{animation:swSlideOut .18s cubic-bezier(.22,.61,.36,1) forwards}
+  .sview.closing{animation:swSlideOut .24s cubic-bezier(.22,.61,.36,1) forwards}
   @media (prefers-reduced-motion: reduce){ .sview,.sview.closing{animation:none!important} }
   .sect{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
   .sect>h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--txt);display:flex;align-items:center;gap:7px}
@@ -214,11 +225,12 @@
   #viewer.closing{animation:swSlideOut .22s cubic-bezier(.22,.61,.36,1) forwards}
   #lightbox{animation:swFadeIn .18s ease}
   #lightbox.closing{animation:swFadeOut .16s ease forwards}
-  .editbar,.pcard{animation:swFadeUp .24s cubic-bezier(.22,.61,.36,1)}
+  /* 二级页内容不再单独淡入(由外层滑动动画负责, 避免叠加动画显得抽动) */
   @media (prefers-reduced-motion: reduce){
-    .page.active,.hitem.anim,.provmenu,#viewer,#lightbox,.editbar,.pcard{animation:none!important}
+    .page.active,.hitem.anim,.provmenu,#viewer,#lightbox,.toolpanel{animation:none!important}
     .hitem,.res img,.provrow{transition:none!important}
-  }  /* ---------- 局部编辑 ---------- */
+  }
+  /* ---------- 局部编辑 ---------- */
   #editor{position:fixed;inset:0;z-index:180;background:var(--bg);display:flex;flex-direction:column}
   #editor .edbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;
         border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px)}
@@ -384,6 +396,7 @@ function dstep(msg){ try{ var t=document.title; document.title='DBG:'+msg; local
 
 const ICONS = {
   theme:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  moon:'<svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
   history:'<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6l-2.5 2.5"/><path d="M3.5 8.5V4.5M3.5 8.5h4"/><path d="M12 7.5v4.5l3 1.8"/></svg>',
   search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
@@ -422,10 +435,38 @@ const OPT_PROMPT_GPTIMAGE = `你是一名专业的 AI 图像生成提示词工�
 最终只输出优化后的英文图像生成 Prompt 本身，不解释分析过程，不输出修改说明，不输出 JSON，不输出评分，不输出前言或其他内容。最终 Prompt 必须能够直接复制给 GPT-image 使用。`;
 
 /* ---------- 主题 ---------- */
-let THEME = localStorage.getItem('sw_theme') || 'dark';
-function applyTheme(){ document.documentElement.setAttribute('data-theme',THEME);
-  document.getElementById('themeBtn').innerHTML = icon(THEME==='dark'?'theme':'theme'); }
-function toggleTheme(){ THEME = THEME==='dark'?'light':'dark'; localStorage.setItem('sw_theme',THEME); applyTheme(); }
+/* ---------- 主题(跟随系统 / 浅色 / 深色) ---------- */
+const mqDark = (window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null);
+let THEME_MODE = 'system';
+try{ THEME_MODE = localStorage.getItem('sw_theme_mode') || 'system'; }catch(e){}
+function resolvedTheme(){
+  if(THEME_MODE==='light') return 'light';
+  if(THEME_MODE==='dark') return 'dark';
+  return (mqDark && mqDark.matches) ? 'dark' : 'light';
+}
+function applyTheme(){
+  const t = resolvedTheme();
+  document.documentElement.setAttribute('data-theme', t);
+  const b = document.getElementById('themeBtn');
+  if(b){ b.innerHTML = icon(t==='dark' ? 'moon' : 'theme');
+    b.title = '主题：' + ({system:'跟随系统', light:'浅色', dark:'深色'})[THEME_MODE]; }
+  document.querySelectorAll('[data-theme-opt]').forEach(function(el){
+    el.classList.toggle('on', el.getAttribute('data-theme-opt')===THEME_MODE);
+  });
+  const mt = document.querySelector('meta[name="theme-color"]');
+  if(mt) mt.setAttribute('content', t==='dark' ? '#0f1115' : '#f4f5f8');
+}
+function setThemeMode(m){
+  THEME_MODE = m;
+  try{ localStorage.setItem('sw_theme_mode', m); localStorage.setItem('sw_theme', resolvedTheme()); }catch(e){}
+  applyTheme();
+  toast({system:'主题：跟随系统', light:'主题：浅色', dark:'主题：深色'}[m] || '');
+}
+function toggleTheme(){   // 顶栏按钮: 三态循环
+  const order=['system','light','dark'];
+  setThemeMode(order[(order.indexOf(THEME_MODE)+1) % 3]);
+}
+if(mqDark){ try{ mqDark.addEventListener('change', function(){ if(THEME_MODE==='system') applyTheme(); }); }catch(e){} }
 
 /* ---------- 工具 ---------- */
 const $ = id => document.getElementById(id);
@@ -1341,35 +1382,67 @@ function lbReset(){ lbScale=1; if(lbImg){ lbImg.style.transform='translate(-50%,
 /* ---------- 设置(provider 编辑) ---------- */
 let settingsView='list'; let editingProvider=null; let provSearch='';
 let _setViewMode=null, _setAnimToken=0;
+function swapSettingsView(box, newEl, forward){
+  const oldEl = box.firstElementChild;
+  if(!oldEl){ box.innerHTML=''; box.appendChild(newEl); return; }
+  // 过渡期间锁定容器高度, 避免塌陷导致页面抽动
+  box.style.position='relative';
+  box.style.height = oldEl.offsetHeight + 'px';
+  box.style.overflow='hidden';
+  const ABS = function(el){ el.style.position='absolute'; el.style.top='0';
+    el.style.left='0'; el.style.right='0'; el.style.width='100%'; };
+  const release = function(){
+    box.style.position=''; box.style.height=''; box.style.overflow='';
+    newEl.style.cssText='';
+  };
+  if(forward){
+    // 进二级页: 新页从右滑入, 盖在列表上(列表不动)
+    ABS(newEl); newEl.style.zIndex='2';
+    box.appendChild(newEl);
+    newEl.style.animation='swSlideIn .26s cubic-bezier(.22,.61,.36,1)';
+    setTimeout(function(){ release(); if(oldEl.parentNode) oldEl.remove(); }, 280);
+  }else{
+    // 返回: 当前页向右滑出, 露出下面的列表
+    ABS(oldEl); oldEl.style.zIndex='2';
+    box.insertBefore(newEl, oldEl);
+    oldEl.style.animation='swSlideOut .24s cubic-bezier(.22,.61,.36,1) forwards';
+    setTimeout(function(){ release(); if(oldEl.parentNode) oldEl.remove(); }, 260);
+  }
+}
 function renderSettings(skipAnim){
   const box=$('provEditor'); if(!box) return;
   const hd=document.querySelector('header');
   const isEdit = (settingsView==='edit' && editingProvider && CONFIG[editingProvider]);
   const mode = isEdit ? 'edit' : 'list';
-  const animate = (!skipAnim && _setViewMode && _setViewMode !== mode);
+  const prev = _setViewMode;
+  const animate = (!skipAnim && prev && prev !== mode);
   _setViewMode = mode;
-  const old = box.firstElementChild;
   const tok = ++_setAnimToken;
-  const build = function(){
-    if(tok !== _setAnimToken) return;      // 有更新的渲染请求, 放弃这次
-    box.innerHTML='';
-    if(hd) hd.style.display = isEdit ? 'none' : '';
-    const nv = isEdit ? providerEditor(editingProvider) : providerListView();
-    nv.classList.add('sview');
-    box.appendChild(nv);
-  };
-  if(animate && old){
-    old.classList.add('closing');
-    setTimeout(build, 170);          // 等退出动画播完再换
-  } else build();
+  if(hd) hd.style.display = isEdit ? 'none' : '';   // 顶栏先切好, 再播内容动画
+  const nv = isEdit ? providerEditor(editingProvider) : providerListView();
+  if(animate && tok === _setAnimToken){
+    swapSettingsView(box, nv, mode==='edit');
+  }else{
+    box.innerHTML=''; box.appendChild(nv);
+  }
+  applyTheme();
 }
 function firstChar(s){ s=(s||'?'); const t=String(s).trim(); return t[0]?t[0].toUpperCase():'?'; }
 function providerListView(){
   const wrap=document.createElement('div');
+  // 外观(全局设置)
+  const ap=document.createElement('div'); ap.className='sect';
+  ap.style.marginTop='0'; ap.style.paddingTop='0'; ap.style.borderTop='none';
+  ap.innerHTML='<h4>外观</h4><div class="addbar" style="margin-top:0">'
+    +'<button class="btn small" data-theme-opt="system" onclick="setThemeMode(\'system\')">跟随系统</button>'
+    +'<button class="btn small" data-theme-opt="light" onclick="setThemeMode(\'light\')">浅色</button>'
+    +'<button class="btn small" data-theme-opt="dark" onclick="setThemeMode(\'dark\')">深色</button>'
+    +'</div>';
+  wrap.appendChild(ap);
   // 顶部: 标题"API设置" + "+ 新增提供方"(最右)
-  const top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px';
-  const h=document.createElement('div'); h.style.cssText='font-size:22px;font-weight:700;color:var(--txt)'; h.textContent='API设置';
-  const addBtn=document.createElement('button'); addBtn.className='btn'; addBtn.textContent='+ 新增提供方'; addBtn.onclick=addProvider;
+  const top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin:16px 0 12px;padding-top:14px;border-top:1px solid var(--line)';
+  const h=document.createElement('div'); h.style.cssText='font-size:18px;font-weight:700;color:var(--txt)'; h.textContent='API 设置';
+  const addBtn=document.createElement('button'); addBtn.className='btn small'; addBtn.textContent='+ 新增提供方'; addBtn.onclick=addProvider;
   top.append(h,addBtn); wrap.appendChild(top);
   const row2=document.createElement('div'); row2.className='provlist-top';
   const search=document.createElement('input'); search.type='text'; search.id='provSearch'; search.placeholder='搜索提供方'; search.value=provSearch;
