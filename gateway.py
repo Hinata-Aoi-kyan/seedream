@@ -1130,15 +1130,15 @@ def bg_test(body):
         if not r.get("ok"): return "不支持"
         info = r.get("info") or {}
         if not info.get("alpha_channel"): return "参数被忽略(返回无透明通道)"
-        if info.get("transparent", 0) > 0: return "支持 ✅"
+        if info.get("transparent", 0) > 0: return "支持"
         return "有通道但无透明像素"
     for r in rows:
         r["text2img"]["verdict"] = _verdict(r["text2img"])
         r["img2img"]["verdict"] = _verdict(r["img2img"])
     return {"rows": rows,
             "summary": {"total": len(rows),
-                        "text2img_ok": sum(1 for r in rows if r["text2img"]["verdict"] == "支持 ✅"),
-                        "img2img_ok": sum(1 for r in rows if r["img2img"]["verdict"] == "支持 ✅")}}
+                        "text2img_ok": sum(1 for r in rows if r["text2img"]["verdict"] == "支持"),
+                        "img2img_ok": sum(1 for r in rows if r["img2img"]["verdict"] == "支持")}}
 
 def settings():
     keys = load_keys()
