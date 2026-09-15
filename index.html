@@ -167,9 +167,25 @@
   .mrow .del{width:32px;height:32px;flex:none}
   .det{margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:10px}
   .addbar{display:flex;gap:8px;margin-top:10px;align-items:center}
-  .addbar.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch}
-  .addbar.actions .btn{min-height:44px;white-space:nowrap;padding:7px 8px;overflow:hidden}
-  .addbar.actions .span2{grid-column:1 / -1}
+  /* ---------- 设置页: 二级视图切换动画 + 分区 ---------- */
+  .sview{animation:swSlideIn .26s cubic-bezier(.22,.61,.36,1)}
+  .sview.closing{animation:swSlideOut .18s cubic-bezier(.22,.61,.36,1) forwards}
+  @media (prefers-reduced-motion: reduce){ .sview,.sview.closing{animation:none!important} }
+  .sect{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+  .sect>h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--txt);display:flex;align-items:center;gap:7px}
+  .sect>h4 .cnt{font-size:11px;font-weight:400;color:var(--mut);background:var(--card2);border:1px solid var(--line);border-radius:7px;padding:1px 7px}
+  .tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .tools .btn{min-height:42px;white-space:nowrap;padding:7px 8px;overflow:hidden}
+  .tools .span2{grid-column:1 / -1}
+  .toolpanel{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);animation:swFadeUp .2s ease}
+  .toolhead{font-size:12px;font-weight:600;color:var(--mut);margin-bottom:8px}
+  .btn.on{border-color:var(--acc);color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent)}
+  .chips{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto}
+  .chip{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px 6px 5px 10px}
+  .chip .cid{flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip .btn{padding:5px 9px;font-size:12px;min-height:0}
+  .chip .btn[data-done]{opacity:.45;border-color:transparent;color:var(--acc2);pointer-events:none}
+  .mrow input[data-id]{font-size:13px}
   .small-note{font-size:11px;color:var(--mut);margin-top:6px}
   .toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:var(--card2);
         border:1px solid var(--line);padding:11px 18px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.25)}
@@ -1324,10 +1340,28 @@ function lbReset(){ lbScale=1; if(lbImg){ lbImg.style.transform='translate(-50%,
 
 /* ---------- 设置(provider 编辑) ---------- */
 let settingsView='list'; let editingProvider=null; let provSearch='';
-function renderSettings(){ const hd=document.querySelector('header'); if(hd) hd.style.display=''; const box=$('provEditor'); box.innerHTML='';
-  if(settingsView==='edit' && editingProvider && CONFIG[editingProvider]){ box.appendChild(providerEditor(editingProvider)); return; }
-  settingsView='list';
-  box.appendChild(providerListView());
+let _setViewMode=null, _setAnimToken=0;
+function renderSettings(skipAnim){
+  const box=$('provEditor'); if(!box) return;
+  const hd=document.querySelector('header');
+  const isEdit = (settingsView==='edit' && editingProvider && CONFIG[editingProvider]);
+  const mode = isEdit ? 'edit' : 'list';
+  const animate = (!skipAnim && _setViewMode && _setViewMode !== mode);
+  _setViewMode = mode;
+  const old = box.firstElementChild;
+  const tok = ++_setAnimToken;
+  const build = function(){
+    if(tok !== _setAnimToken) return;      // 有更新的渲染请求, 放弃这次
+    box.innerHTML='';
+    if(hd) hd.style.display = isEdit ? 'none' : '';
+    const nv = isEdit ? providerEditor(editingProvider) : providerListView();
+    nv.classList.add('sview');
+    box.appendChild(nv);
+  };
+  if(animate && old){
+    old.classList.add('closing');
+    setTimeout(build, 170);          // 等退出动画播完再换
+  } else build();
 }
 function firstChar(s){ s=(s||'?'); const t=String(s).trim(); return t[0]?t[0].toUpperCase():'?'; }
 function providerListView(){
@@ -1338,8 +1372,10 @@ function providerListView(){
   const addBtn=document.createElement('button'); addBtn.className='btn'; addBtn.textContent='+ 新增提供方'; addBtn.onclick=addProvider;
   top.append(h,addBtn); wrap.appendChild(top);
   const row2=document.createElement('div'); row2.className='provlist-top';
-  const search=document.createElement('input'); search.type='text'; search.placeholder='搜索提供方'; search.value=provSearch;
-  search.addEventListener('input',()=>{ provSearch=search.value.trim().toLowerCase(); renderSettings(); });
+  const search=document.createElement('input'); search.type='text'; search.id='provSearch'; search.placeholder='搜索提供方'; search.value=provSearch;
+  search.addEventListener('input',()=>{ provSearch=search.value.trim().toLowerCase(); renderSettings(true);
+    const el=document.getElementById('provSearch');
+    if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} } });
   row2.appendChild(search); wrap.appendChild(row2);
   const keys=Object.keys(CONFIG).filter(k=>!provSearch || ((CONFIG[k].label||k).toLowerCase().includes(provSearch)));
   keys.forEach(k=>wrap.appendChild(providerRow(k)));
@@ -1379,7 +1415,6 @@ function closeProvMenu(fromBack){
 }
 function providerEditor(key){
   const wrap=document.createElement('div');
-  const hd=document.querySelector('header'); if(hd) hd.style.display='none';   // 隐藏主顶栏
   const bar=document.createElement('div'); bar.className='editbar';
   const back=document.createElement('button'); back.className='icon-btn'; back.title='返回提供方列表';
   back.innerHTML='<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>';
@@ -1392,64 +1427,143 @@ function providerEditor(key){
   wrap.appendChild(providerCard(key));
   return wrap;
 }
+/* ---------- 工具结果面板(三工具共用一块, 避免堆叠) ---------- */
+let _toolState = {};   // key -> {which, title, html}
+function toolPaint(key){
+  const st=_toolState[key]; if(!st) return;
+  ['det','diag','bg'].forEach(function(t){
+    const b=document.getElementById('tb_'+t+'_'+key);
+    if(b) b.classList.toggle('on', t===st.which);
+  });
+  const el=document.getElementById('tool_'+key); if(!el) return;
+  el.classList.remove('hide');
+  el.innerHTML='<div class="toolhead">'+esc(st.title)+'</div>'+st.html;
+}
+function toolShow(key, which, title, html){
+  _toolState[key]={which:which, title:title, html:html}; toolPaint(key);
+}
+function toolSet(key, html){
+  if(_toolState[key]){ _toolState[key].html=html; toolPaint(key); }
+}
+function detChips(key){
+  const ids=_det[key]||[];
+  if(!ids.length) return '';
+  let h='<div class="chips">';
+  ids.forEach(function(id){
+    const inImg=(CONFIG[key].image_models||[]).some(function(m){ return m.id===id; });
+    const inChat=(CONFIG[key].chat_models||[]).some(function(m){ return m.id===id; });
+    h+='<div class="chip"><span class="cid">'+esc(id)+'</span>'
+      +'<button class="btn small" data-add="image_models" data-id="'+esc(id)+'"'+(inImg?' data-done="1"':'')+'>'+(inImg?'✓生图':'+生图')+'</button>'
+      +'<button class="btn small" data-add="chat_models" data-id="'+esc(id)+'"'+(inChat?' data-done="1"':'')+'>'+(inChat?'✓文本':'+文本')+'</button>'
+      +'</div>';
+  });
+  return h+'</div>';
+}
+function detPanel(key, extra){
+  const n=(_det[key]||[]).length;
+  return (extra?'<div class="small-note" style="margin:0 0 8px">'+extra+'</div>':'')
+    + '<div class="small-note" style="margin:0 0 6px">检测到 '+n+' 个模型，点按钮直接加入；也可用下方下拉添加</div>'
+    + detChips(key);
+}
+function addDet(key, type, id){
+  if(!id) return;
+  const arr=(CONFIG[key][type]=CONFIG[key][type]||[]);
+  if(arr.some(function(m){ return m.id===id; })){ toast('已存在: '+id); return; }
+  arr.push({id:id, label:id});
+  refreshModelList(key, type);
+  toolSet(key, detPanel(key));
+  toast('已加入'+(type==='image_models'?'生图':'文本')+'模型: '+id);
+}
+/* ---------- 模型列表(局部刷新, 不再整页重渲染) ---------- */
+function refreshModelList(key, type){
+  const box=document.getElementById((type==='image_models'?'imglist_':'chatlist_')+key);
+  if(box) renderList(key, type, box);
+  const cnt=document.getElementById((type==='image_models'?'imgcnt_':'chatcnt_')+key);
+  if(cnt) cnt.textContent=(CONFIG[key][type]||[]).length;
+}
+function modelSection(key, type, label){
+  const listId = type==='image_models'?'imglist_'+key:'chatlist_'+key;
+  const selId  = type==='image_models'?'detImg_'+key:'detChat_'+key;
+  const cntId  = type==='image_models'?'imgcnt_'+key:'chatcnt_'+key;
+  const n=(CONFIG[key][type]||[]).length;
+  return `<div class="sect">
+    <h4>${label}<span class="cnt" id="${cntId}">${n}</span></h4>
+    <div class="mlist" id="${listId}"></div>
+    <div class="addbar stretch" style="margin-top:8px">
+      <select id="${selId}" class="sel-hint" style="flex:1" onchange="this.classList.toggle('filled',this.value!=='')"><option value="">（检测后可下拉选择）</option></select>
+      <button class="btn small" style="flex:none;min-width:62px" onclick="addModelFromDet('${key}','${type}')">添加</button>
+      <button class="btn small" style="flex:none;min-width:62px" onclick="addModel('${key}','${type}')">手动</button>
+    </div>
+  </div>`;
+}
 function providerCard(key){
   const p=CONFIG[key];
   const card=document.createElement('div'); card.className='pcard';
   card.innerHTML=`<div class="phead"><b id="pname_${key}">${esc(p.label||key)}</b>
     <button class="btn ghost" onclick="delProvider('${key}')" title="删除服务方">${icon('trash')}</button></div>
     <label>提供方名称</label>
-    <input type="text" id="plabel_${key}" value="${esc(p.label||'')}" placeholder="服务方名称（如 中转/ComfyUI）" oninput="document.getElementById('pname_${key}').textContent=this.value||'未命名'; CONFIG['${key}'].label=this.value">
+    <input type="text" id="plabel_${key}" value="${esc(p.label||'')}" placeholder="服务方名称（如 中转 / ComfyUI）" oninput="document.getElementById('pname_${key}').textContent=this.value||'未命名'; CONFIG['${key}'].label=this.value">
     <label>Base URL</label>
-    <input type="text" id="pbase_${key}" value="${esc(p.base_url||'')}" placeholder="https://api2.jojocode.com/v1" oninput="CONFIG['${key}'].base_url=this.value">
+    <input type="text" id="pbase_${key}" value="${esc(p.base_url||'')}" placeholder="https://api.example.com/v1" oninput="CONFIG['${key}'].base_url=this.value">
     <label>API Key</label>
     <input type="password" id="pkey_${key}" placeholder="留空则不修改" oninput="keyDraft['${key}']=this.value">
-    <div class="addbar actions">
-      <button class="btn small" onclick="detect('${key}')">${icon('search')}检测模型</button>
-      <button class="btn small" onclick="diagnose('${key}')">诊断</button>
-      <button class="btn small span2" onclick="bgTest('${key}')">透明背景检测</button>
+
+    <div class="sect">
+      <h4>连接与检测</h4>
+      <div class="tools">
+        <button class="btn small" id="tb_det_${key}" onclick="detect('${key}')">${icon('search')}检测模型</button>
+        <button class="btn small" id="tb_diag_${key}" onclick="diagnose('${key}')">诊断</button>
+        <button class="btn small span2" id="tb_bg_${key}" onclick="bgTest('${key}')">透明背景检测</button>
+      </div>
+      <div id="tool_${key}" class="toolpanel hide"></div>
     </div>
-    <div id="det_${key}" class="det hide"></div>
-    <div id="diag_${key}" class="det hide"></div>
-    <div id="bg_${key}" class="det hide"></div>
-    ${modelListBlock(key,'image_models','生图模型')}
-    ${modelListBlock(key,'chat_models','文本模型')}
+
+    ${modelSection(key,'image_models','生图模型')}
+    ${modelSection(key,'chat_models','文本模型')}
 `;
   const pk=card.querySelector('#pkey_'+key); if(pk && keyDraft[key]) pk.value=keyDraft[key];
   renderList(key,'image_models',card.querySelector('#imglist_'+key));
   renderList(key,'chat_models',card.querySelector('#chatlist_'+key));
   fillDetDropdown(key, card);
-  return card; }
-function modelListBlock(key,type,label){
-  const listId = type==='image_models'?'imglist_'+key:'chatlist_'+key;
-  const selId  = type==='image_models'?'detImg_'+key:'detChat_'+key;
-  return `<label>${label}</label><div class="mlist" id="${listId}"></div>
-    <div class="addbar stretch" style="margin-top:8px">
-      <select id="${selId}" class="sel-hint" style="flex:1" onchange="this.classList.toggle('filled',this.value!=='')"><option value="">（选择模型）</option></select>
-      <button class="btn small" style="flex:none;min-width:64px" onclick="addModelFromDet('${key}','${type}')">添加</button>
-      <button class="btn small" style="flex:none;min-width:64px" onclick="addModel('${key}','${type}')">手动</button>
-    </div>`;
+  // chips 上的「+生图 / +文本」用事件委托, 避免 id 里特殊字符的转义问题
+  const tp=card.querySelector('#tool_'+key);
+  tp.addEventListener('click', function(e){
+    const b=e.target.closest('[data-add]'); if(!b || b.hasAttribute('data-done')) return;
+    addDet(key, b.getAttribute('data-add'), b.getAttribute('data-id'));
+  });
+  return card;
 }
 function fillDetDropdown(key, card){
   try{ var saved=JSON.parse(localStorage.getItem('sw_det_'+key)||'[]'); if(saved && saved.length) _det[key]=_det[key]&&_det[key].length?saved.concat(_det[key].filter(function(x){return saved.indexOf(x)<0;})):saved; }catch(e){}
   if(!_det[key]) _det[key]=[];
   ['image_models','chat_models'].forEach(type=>{
     const selId = type==='image_models'?'detImg_'+key:'detChat_'+key;
-    const sel=card?card.querySelector('#'+selId):document.getElementById(selId); if(!sel) return;
-    sel.innerHTML='<option value="">（检测后可下拉选择）</option>';
+    const sel=(card?card.querySelector('#'+selId):null)||document.getElementById(selId); if(!sel) return;
+    const cur=sel.value;
+    sel.innerHTML='<option value="">'+( _det[key].length? ('（'+_det[key].length+' 个可选）') : '（检测后可下拉选择）')+'</option>';
     (_det[key]||[]).forEach(id=>{ const o=document.createElement('option'); o.value=id; o.textContent=id; sel.appendChild(o); });
+    if(cur && (_det[key]||[]).indexOf(cur)>=0) sel.value=cur;
   });
 }
-function renderList(key,type,box){ box.innerHTML='';
-  (CONFIG[key][type]||[]).forEach((m,i)=>{ const row=document.createElement('div'); row.className='mrow';
+function renderList(key,type,box){ if(!box) return; box.innerHTML='';
+  const arr=CONFIG[key][type]||[];
+  if(!arr.length){ const e=document.createElement('div'); e.className='small-note'; e.style.margin='0';
+    e.textContent='暂无模型 —— 点「检测模型」后直接选，或点「手动」自己填'; box.appendChild(e); return; }
+  arr.forEach((m,i)=>{ const row=document.createElement('div'); row.className='mrow';
     row.innerHTML=`<input type="text" class="mid" data-id value="${esc(m.id||'')}" placeholder="模型ID" oninput="CONFIG['${key}']['${type}'][${i}].id=this.value">
-      <input type="text" data-label value="${esc(m.label||'')}" placeholder="显示名" oninput="CONFIG['${key}']['${type}'][${i}].label=this.value">
-      <button class="btn ghost del" onclick="removeModel('${key}','${type}',${i})">${icon('trash')}</button>`;
+      <input type="text" data-label value="${esc(m.label||'')}" placeholder="显示名（可空）" oninput="CONFIG['${key}']['${type}'][${i}].label=this.value">
+      <button class="btn ghost del" onclick="removeModel('${key}','${type}',${i})" title="删除">${icon('trash')}</button>`;
     box.appendChild(row); }); }
-function addModel(key,type){ (CONFIG[key][type]=CONFIG[key][type]||[]).push({id:'',label:''}); renderSettings(); }
+function addModel(key,type){ (CONFIG[key][type]=CONFIG[key][type]||[]).push({id:'',label:''});
+  refreshModelList(key,type);
+  setTimeout(function(){ const box=document.getElementById((type==='image_models'?'imglist_':'chatlist_')+key);
+    if(!box) return; const rows=box.querySelectorAll('.mrow'); const last=rows[rows.length-1];
+    if(last){ const inp=last.querySelector('[data-id]'); if(inp) inp.focus(); } }, 40); }
 function addModelFromDet(key,type){ const selId = type==='image_models'?'detImg_'+key:'detChat_'+key;
   const sel=document.getElementById(selId);
-  if(sel && sel.value){ (CONFIG[key][type]=CONFIG[key][type]||[]).push({id:sel.value,label:sel.value}); renderSettings(); toast('已添加 '+sel.value); } }
-function removeModel(key,type,i){ CONFIG[key][type].splice(i,1); renderSettings(); }
+  if(!sel || !sel.value){ toast('请先在下拉里选一个模型（或点「检测模型」）'); return; }
+  addDet(key, type, sel.value); }
+function removeModel(key,type,i){ CONFIG[key][type].splice(i,1); refreshModelList(key,type); toolSet(key, detPanel(key)); }
 function openEditor(key){
   settingsView='edit'; editingProvider=key; renderSettings(); navPush();
 }
@@ -1460,20 +1574,16 @@ async function delProvider(key){ if(!confirm('删除提供方 '+key+' ?')) retur
 async function detect(key){
   const base=document.getElementById('pbase_'+key).value.trim();
   const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
-  const box=document.getElementById('det_'+key); box.classList.remove('hide'); box.innerHTML='<div class="small-note"><span class="spin"></span>检测中…</div>';
+  toolShow(key,'det','检测模型','<div class="small-note" style="margin:0"><span class="loader" style="width:14px;height:14px;border-width:2px"></span> 正在检测…</div>');
   try{ const d=await jpost('/api/detect',{provider:key,base_url:base,api_key:api||undefined});
     _det[key]=d.models||[];
     try{ localStorage.setItem('sw_det_'+key, JSON.stringify(_det[key])); }catch(e){}
-    box.innerHTML=_det[key].length
-      ? `<div class="small-note">检测到 ${_det[key].length} 个模型，请在下方「生图/文本模型」栏用下拉选择后点「添加」</div>`
-      : ('<div class="small-note">'+(d.message?esc(d.message):'未返回模型（可能不支持 /models，请点「手动」添加，或用「诊断」验证）')+'</div>');
     fillDetDropdown(key);
-  }catch(e){ box.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; } }
+    if(_det[key].length){ toolSet(key, detPanel(key)); }
+    else { toolSet(key, '<div class="small-note" style="margin:0">'+esc(d.message||'未返回模型（该中转可能不支持 /models，请用「手动」添加，或点「诊断」验证）')+'</div>'); }
+  }catch(e){ toolSet(key,'<div class="small-note" style="margin:0">检测失败: '+esc(e.message)+'</div>'); } }
 async function bgTest(key){
-  const el=document.getElementById('bg_'+key);
-  if(!el){ toast('找不到检测容器'); return; }
-  el.classList.remove('hide');
-  el.innerHTML='<div class="small-note"><span class="spin"></span>正在逐个模型试透明背景（每个模型 2 次请求，可能耗时 1~3 分钟）…</div>';
+  toolShow(key,'bg','透明背景检测','<div class="small-note" style="margin:0"><span class="loader" style="width:14px;height:14px;border-width:2px"></span> 正在逐个模型试透明背景（每个模型 2 次请求，可能耗时 1~3 分钟）…</div>');
   try{
     const d=await jpost('/api/bgtest',{provider:key},600000);
     let html='';
@@ -1515,8 +1625,8 @@ async function bgTest(key){
       +(concl?'<br>'+concl:'')
       +'<br><span style="color:var(--mut);font-size:12px">提示：提示词里写「透明背景」没用 —— 模型只会画一个方格图案假装透明，那不是真 alpha 通道。</span>'
       +'</div>';
-    el.innerHTML=html;
-  }catch(e){ el.innerHTML='<div class="small-note">检测失败: '+esc(e.message)+'</div>'; }
+    toolSet(key, html);
+  }catch(e){ toolSet(key, '<div class="small-note" style="margin:0">检测失败: '+esc(e.message)+'</div>'); }
 }
 function _chkRow(ok, name, detail, ms){
   var s='<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0">'
@@ -1530,10 +1640,7 @@ function _secTitle(t){ return '<div style="font-size:12px;color:var(--mut);margi
 
 /* 合并诊断: ① 接口与 Key(连接测试) + ② 网络传输(网络诊断) */
 async function diagnose(key){
-  var el=document.getElementById('diag_'+key);
-  if(!el){ toast('找不到诊断容器'); return; }
-  el.classList.remove('hide');
-  el.innerHTML='<div class="small-note"><span class="spin"></span>正在诊断：接口与 Key…</div>';
+  toolShow(key,'diag','诊断','<div class="small-note" style="margin:0"><span class="loader" style="width:14px;height:14px;border-width:2px"></span> 正在诊断：接口与 Key…</div>');
   var html='';
   // ① 接口与 Key
   var baseEl=document.getElementById('pbase_'+key);
@@ -1549,7 +1656,7 @@ async function diagnose(key){
   }catch(e){
     html+=_chkRow(false, '接口连通 / Key 有效', e.message);
   }
-  el.innerHTML=html+'<div class="small-note"><span class="spin"></span>正在测网络传输（大流量）…</div>';
+  toolSet(key, html+'<div class="small-note" style="margin:0"><span class="loader" style="width:14px;height:14px;border-width:2px"></span> 正在测网络传输（大流量）…</div>');
   // ② 网络传输
   try{
     var d=await jpost('/api/netdiag',{mb:2,provider:key},300000);
@@ -1560,7 +1667,7 @@ async function diagnose(key){
     html+=_secTitle('② 网络传输（与 Key 无关，测代理/大包）');
     html+=_chkRow(false, '网络测试', e.message);
   }
-  el.innerHTML=html;
+  toolSet(key, html);
 }
 async function saveProvider(key){
   CONFIG[key].label=document.getElementById('plabel_'+key).value.trim()||key;
