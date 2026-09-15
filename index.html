@@ -192,9 +192,9 @@
   .sect{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
   .sect>h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--txt);display:flex;align-items:center;gap:7px}
   .sect>h4 .cnt{font-size:11px;font-weight:400;color:var(--mut);background:var(--card2);border:1px solid var(--line);border-radius:7px;padding:1px 7px}
-  .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-  .tools .btn{min-height:42px;white-space:nowrap;padding:6px 4px;overflow:hidden;font-size:12px;gap:4px}
-  .tools .btn svg{width:13px;height:13px}
+  .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .tools .btn{min-height:42px;white-space:nowrap;padding:6px 3px;overflow:hidden;font-size:12px;gap:3px}
+  .tools .btn svg{width:12px;height:12px}
   .toolpanel{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);animation:swFadeUp .2s ease}
   .toolhead{font-size:12px;font-weight:600;color:var(--mut);margin-bottom:8px}
   .btn.on{border-color:var(--acc);color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent)}
@@ -204,6 +204,15 @@
   .chip .btn{padding:5px 9px;font-size:12px;min-height:0}
   .chip .btn[data-done]{opacity:.45;border-color:transparent;color:var(--acc2);pointer-events:none}
   .mrow input[data-id]{font-size:13px}
+  /* API Key 掩码 + 显示/隐藏 */
+  .keywrap{position:relative}
+  .keywrap input{padding-right:46px}
+  .eyebtn{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:36px;height:36px;
+        border:none;background:none;color:var(--mut);cursor:pointer;padding:0;border-radius:8px;
+        display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}
+  .eyebtn:active{background:color-mix(in srgb,var(--mut) 18%,transparent)}
+  .eyebtn.on{color:var(--acc)}
+  .eyebtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .small-note{font-size:11px;color:var(--mut);margin-top:6px}
   .toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:var(--card2);
         border:1px solid var(--line);padding:11px 18px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.25)}
@@ -426,6 +435,8 @@ const ICONS = {
   more:'<svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="18.5" r="1.3"/></svg>',
   warn:'<svg viewBox="0 0 24 24"><path d="M12 4.5l8.5 15h-17z"/><path d="M12 10.5v4M12 17.3h.01"/></svg>',
   ban:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6.2 17.8L17.8 6.2"/></svg>',
+  eye:'<svg viewBox="0 0 24 24"><path d="M2.2 12S5.8 5.8 12 5.8 21.8 12 21.8 12 18.2 18.2 12 18.2 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="2.9"/></svg>',
+  eyeOff:'<svg viewBox="0 0 24 24"><path d="M3.5 3.5l17 17"/><path d="M10.3 10.4a2.9 2.9 0 0 0 3.2 3.2"/><path d="M7.1 7.2C4.2 8.9 2.2 12 2.2 12s3.6 6.2 9.8 6.2c1.6 0 3-.3 4.3-.9"/><path d="M17 16.8c2.8-1.7 4.8-4.8 4.8-4.8S18.2 5.8 12 5.8c-.9 0-1.8.1-2.6.3"/></svg>',
   search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
   history:'<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6l-2.5 2.5"/><path d="M3.5 8.5V4.5M3.5 8.5h4"/><path d="M12 7.5v4.5l3 1.8"/></svg>',
@@ -607,6 +618,7 @@ async function init(){
   dstep('1-before-models');
   MODELS = await jget('/api/models'); dstep('2-models-ok n='+(MODELS?Object.keys(MODELS).length:'x'));
   CONFIG = await jget('/api/config'); dstep('3-config-ok n='+(CONFIG?Object.keys(CONFIG).length:'x'));
+  await loadKeyStatus(); dstep('3b-keystatus');
   fillProviders(); dstep('4-providers-filled');
   onProviderChange(); dstep('5-provider-change');
   buildChatOptions(); setupOptPrompt(); dstep('6-opt-setup');
@@ -1592,6 +1604,51 @@ function modelSection(key, type, label){
     </div>
   </div>`;
 }
+/* ---------- API Key 掩码显示 ---------- */
+const KEY_MASK = '••••••••••••••••';
+let HAS_KEY = {};                       // provider -> 是否已保存 Key
+async function loadKeyStatus(){
+  try{ const s=await jget('/api/settings'); const p=(s&&s.providers)||{};
+    Object.keys(p).forEach(function(k){ HAS_KEY[k]=!!p[k].has_key; }); }catch(e){}
+}
+// 取当前该用的 Key: 用户新输入的 > 已保存的(空则交给后端用存好的)
+function currentKey(key){
+  const inp=document.getElementById('pkey_'+key);
+  let typed='';
+  if(inp && inp.dataset.masked!=='1') typed=(inp.value||'').trim();
+  return (keyDraft[key]||'').trim() || typed || '';
+}
+function keyIsMasked(key){
+  const inp=document.getElementById('pkey_'+key);
+  return !!(inp && inp.dataset.masked==='1');
+}
+function toggleKeyVis(key){
+  const inp=document.getElementById('pkey_'+key);
+  const btn=document.getElementById('peye_'+key);
+  if(!inp) return;
+  const show = (inp.type==='password');
+  inp.type = show ? 'text' : 'password';
+  if(btn){ btn.innerHTML=icon(show ? 'eyeOff' : 'eye');
+    btn.title = show ? '隐藏' : '显示';
+    btn.classList.toggle('on', show); }
+}
+function bindKeyField(card, key){
+  const inp=card.querySelector('#pkey_'+key); if(!inp) return;
+  if(keyDraft[key]){ inp.value=keyDraft[key]; }
+  else if(HAS_KEY[key]){ inp.value=KEY_MASK; inp.dataset.masked='1'; }
+  inp.addEventListener('focus', function(){
+    if(inp.dataset.masked==='1'){       // 开始输入就清掉假掩码
+      inp.value=''; inp.dataset.masked=''; keyDraft[key]='';
+      if(inp.type==='password') toggleKeyVis(key);   // 编辑时自动明文, 方便核对
+    }
+  });
+  inp.addEventListener('input', function(){
+    inp.dataset.masked=''; keyDraft[key]=inp.value;
+  });
+  const btn=card.querySelector('#peye_'+key);
+  if(btn) btn.addEventListener('click', function(e){ e.preventDefault(); toggleKeyVis(key); });
+}
+
 function providerCard(key){
   const p=CONFIG[key];
   const card=document.createElement('div'); card.className='pcard';
@@ -1602,14 +1659,17 @@ function providerCard(key){
     <label>Base URL</label>
     <input type="text" id="pbase_${key}" value="${esc(p.base_url||'')}" placeholder="https://api.example.com/v1" oninput="CONFIG['${key}'].base_url=this.value">
     <label>API Key</label>
-    <input type="password" id="pkey_${key}" placeholder="留空则不修改" oninput="keyDraft['${key}']=this.value">
+    <div class="keywrap">
+      <input type="password" id="pkey_${key}" placeholder="留空则不修改" autocomplete="off" spellcheck="false">
+      <button type="button" class="eyebtn" id="peye_${key}" title="显示">${icon('eye')}</button>
+    </div>
 
     <div class="sect">
       <h4>连接与检测</h4>
       <div class="tools">
         <button class="btn small" id="tb_det_${key}" onclick="detect('${key}')">${icon('search')}检测模型</button>
         <button class="btn small" id="tb_diag_${key}" onclick="diagnose('${key}')">${icon('pulse')}诊断</button>
-        <button class="btn small" id="tb_bg_${key}" onclick="bgTest('${key}')">${icon('droplet')}透明检测</button>
+        <button class="btn small" id="tb_bg_${key}" onclick="bgTest('${key}')">${icon('droplet')}透明图检测</button>
       </div>
       <div id="tool_${key}" class="toolpanel hide"></div>
     </div>
@@ -1618,6 +1678,7 @@ function providerCard(key){
     ${modelSection(key,'chat_models','文本模型')}
 `;
   const pk=card.querySelector('#pkey_'+key); if(pk && keyDraft[key]) pk.value=keyDraft[key];
+  bindKeyField(card, key);
   renderList(key,'image_models',card.querySelector('#imglist_'+key));
   renderList(key,'chat_models',card.querySelector('#chatlist_'+key));
   fillDetDropdown(key, card);
@@ -1669,7 +1730,7 @@ async function delProvider(key){ if(!confirm('删除提供方 '+key+' ?')) retur
   try{ await jput('/api/config',CONFIG); toast('已删除并保存'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions(); }catch(e){ toast('保存失败: '+e.message); } }
 async function detect(key){
   const base=document.getElementById('pbase_'+key).value.trim();
-  const api=(keyDraft[key]||document.getElementById('pkey_'+key).value||'').trim();
+  const api=currentKey(key);
   toolShow(key,'det','检测模型','<div class="small-note" style="margin:0"><span class="loader" style="width:14px;height:14px;border-width:2px"></span> 正在检测…</div>');
   try{ const d=await jpost('/api/detect',{provider:key,base_url:base,api_key:api||undefined});
     _det[key]=d.models||[];
@@ -1744,7 +1805,7 @@ async function diagnose(key){
   var baseEl=document.getElementById('pbase_'+key);
   var keyEl=document.getElementById('pkey_'+key);
   var base=(baseEl&&baseEl.value||'').trim();
-  var api=((keyDraft[key]||(keyEl&&keyEl.value)||'')+'').trim();
+  var api=currentKey(key);
   var cm=(CONFIG[key].chat_models||[])[0], im=(CONFIG[key].image_models||[])[0];
   var model=(cm&&cm.id)||(im&&im.id)||null;
   html+=_secTitle('① 接口与 Key');
@@ -1772,10 +1833,21 @@ async function saveProvider(key){
   CONFIG[key].base_url=document.getElementById('pbase_'+key).value.trim();
   CONFIG[key].image_models=readList(key,'image_models');
   CONFIG[key].chat_models=readList(key,'chat_models');
-  const inp=document.getElementById('pkey_'+key); const v=(inp?inp.value.trim():'')||keyDraft[key]||''; if(v) keyDraft[key]=v;
+  // 掩码状态下不要提交(否则会把假点存成真 Key)
+  const inp=document.getElementById('pkey_'+key);
+  let v = keyIsMasked(key) ? '' : ((inp&&inp.value)||'').trim();
+  v = v || (keyDraft[key]||'').trim();
+  if(v) keyDraft[key]=v;
   try{
     await jput('/api/config',CONFIG);
-    if(v) await jpost('/api/settings',{keys:{[key]:v}});
+    if(v){
+      await jpost('/api/settings',{keys:{[key]:v}});
+      HAS_KEY[key]=true; delete keyDraft[key];          // 已存服务端, 前端只留掩码
+      const i2=document.getElementById('pkey_'+key);
+      if(i2){ i2.value=KEY_MASK; i2.dataset.masked='1'; i2.type='password'; }
+      const b2=document.getElementById('peye_'+key);
+      if(b2){ b2.innerHTML=icon('eye'); b2.classList.remove('on'); b2.title='显示'; }
+    }
     toast('已保存'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions();
   }catch(e){ toast('保存失败: '+e.message); } }
 function readList(key,type){ const box = type==='image_models'?document.getElementById('imglist_'+key):document.getElementById('chatlist_'+key);
