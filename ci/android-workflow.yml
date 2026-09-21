@@ -34,6 +34,16 @@ jobs:
       - name: 准备 Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: 接受 SDK 许可 + 预装组件
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" >/dev/null 2>&1 || true
+          sdkmanager --install "platforms;android-35" >/dev/null 2>&1 || true
+          sdkmanager --install "build-tools;35.0.0" >/dev/null 2>&1 || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+          ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
+
       - name: 安装依赖
         run: |
           npm install --no-audit --no-fund \
