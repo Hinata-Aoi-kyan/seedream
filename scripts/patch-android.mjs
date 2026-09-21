@@ -68,19 +68,39 @@ if (fs.existsSync(GRADLE)) {
 
   // 覆盖 debug 签名配置 -> 用仓库里固定的密钥(保证每次构建签名一致, 可覆盖安装)
   const ks = '../../signing/seedream.jks';
-  if (g.includes('signingConfigs') && !g.includes(ks)) {
-    g = g.replace(/signingConfigs\s*\{/, `signingConfigs {
-        seedream {
+  const SNIP = `        seedream {
             storeFile file('${ks}')
             storePassword 'seedream'
             keyAlias 'seedream'
             keyPassword 'seedream'
         }
-`);
-    // debug 构建类型改用我们的签名(必须插到 buildTypes 里的 debug 块, 不是 buildTypes 本身)
-    g = g.replace(/(buildTypes\s*\{[\s\S]*?debug\s*\{)/, '$1\n            signingConfig signingConfigs.seedream');
-    console.log('[patch] + 签名配置 seedream.jks');
+`;
+  if (!g.includes('signingConfigs.seedream')) {
+    if (/signingConfigs\s*\{/.test(g)) {
+      g = g.replace(/signingConfigs\s*\{/, 'signingConfigs {\n' + SNIP);
+    } else {
+      // Capacitor 模板默认没有 signingConfigs 块 -> 插到 android { 之后
+      g = g.replace(/android\s*\{/, 'android {\n    signingConfigs {\n' + SNIP + '    }\n');
+    }
+    console.log('[patch] + 签名配置 signingConfigs.seedream -> ' + ks);
   }
+
+  // debug 构建类型指向我们的签名(Capacitor 模板里 buildTypes 只有 release, 需要自己加 debug)
+  if (!/buildTypes\s*\{[\s\S]{0,600}?signingConfig signingConfigs\.seedream/.test(g)) {
+    if (/buildTypes\s*\{[\s\S]*?debug\s*\{/.test(g)) {
+      g = g.replace(/(buildTypes\s*\{[\s\S]*?debug\s*\{)/, '$1\n            signingConfig signingConfigs.seedream');
+    } else {
+      g = g.replace(/buildTypes\s*\{/, 'buildTypes {\n        debug {\n            signingConfig signingConfigs.seedream\n        }');
+    }
+    console.log('[patch] + debug 构建类型使用 seedream 签名');
+  }
+
+  // 打印签名相关片段, 便于从 CI 日志核对
+  const m = g.match(/signingConfigs\s*\{[\s\S]*?\n    \}/);
+  if (m) console.log('[patch] signingConfigs 片段:\n' + m[0]);
+  g.split('\n').forEach(function (line) {
+    if (/signingConfig|versionCode|versionName/.test(line)) console.log('[patch] gradle | ' + line.trim());
+  });
 
   if (g !== before2) {
     fs.writeFileSync(GRADLE, g);
