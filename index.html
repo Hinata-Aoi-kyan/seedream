@@ -30,7 +30,12 @@
     --txt:#1b1f27;--mut:#6a7280;--acc:#2563eb;--acc2:#0d9488;--bad:#dc2626;--deep:#ffffff;
   }
   *{box-sizing:border-box}
-  :root{ --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); }
+  :root{
+    /* 安全区: 优先 Capacitor 8.3+ 注入的 --safe-area-inset-*(原生 WindowInsets 真实值);
+       Android WebView <140 的 env() 有 bug 常返回 0, 所以最后由 JS 再兜一次 */
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+  }
   html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg)}
   body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
        background:var(--bg);color:var(--txt);-webkit-tap-highlight-color:transparent;
@@ -618,7 +623,7 @@ async function sysNotify(title, body){
   }
   notifyBrowser(title, body);
 }
-async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+async function jget(u, timeout){ return jreq('GET', u, undefined, timeout||120000); }
 async function jpost(u,b,t){ return jreq('POST',u,b,t); }
 async function jput(u,b){ return jreq('PUT',u,b); }
 async function jreq(m,u,b,timeout){
@@ -707,12 +712,14 @@ async function init(){
   await waitForBridge(2000);          // 等 Capacitor 桥接注入(否则原生能力全失效)
   GW_IS_NATIVE = isNative();
   dstep('0b-native='+GW_IS_NATIVE);
-  // APK: 不让网页画到状态栏底下(Android WebView 的 env(safe-area-inset) 不可靠)
+  // APK: 同步真实安全区(Android WebView 的 env() 不可靠; Capacitor 8.3+ 会注入真实值)
   try{
     const sb = plugin('StatusBar');
-    if(sb && sb.setOverlaysWebView){ await sb.setOverlaysWebView({ overlay:false }); }
-    if(sb && sb.setBackgroundColor){ try{ await sb.setBackgroundColor({ color:'#0f1115' }); }catch(e){} }
+    if(sb && sb.setStyle){ try{ await sb.setStyle({ style:'DARK' }); }catch(e){} }
   }catch(e){ console.warn('statusbar', e); }
+  syncInsets();
+  setTimeout(syncInsets, 300);   // 布局稳定后再同步一次
+  window.addEventListener('resize', syncInsets);
   applyTheme(); requestNotif(); fillDataIcons();
   if(window.NATIVE_API){
     try{ await window.NATIVE_API.ensureCfg(); }catch(e){}
@@ -1595,10 +1602,32 @@ function providerListView(){
   let stamp='';
   try{ const m=document.querySelector('meta[name="build-stamp"]'); stamp=m?m.getAttribute('content'):''; }catch(e){}
   const nat = (typeof window!=='undefined' && window.NATIVE_API) ? (window.NATIVE_API.isNative() ? '原生=是' : '原生=否') : '原生=无模块';
-  bs.textContent = (stamp ? ('构建 '+stamp) : '开发版(未标记)') + ' · ' + nat;
+  const ins = (function(){ try{ return syncInsets(); }catch(e){ return {top:'err',bottom:'err'}; } })();
+  bs.textContent = (stamp ? ('构建 '+stamp) : '开发版(未标记)') + ' · ' + nat
+    + ' · 状态栏 ' + ins.top + ' / 底部 ' + ins.bottom;
   wrap.appendChild(bs);
   return wrap;
 }
+/* ---------- 安全区同步(Capacitor 8.3+ 注入 --safe-area-inset-*) ---------- */
+function readInset(name){
+  try{
+    const cs = getComputedStyle(document.body);
+    let v = (cs.getPropertyValue(name) || '').trim();
+    if(!v){ v = (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim(); }
+    return v || '0px';
+  }catch(e){ return '0px'; }
+}
+function syncInsets(){
+  const t = readInset('--safe-area-inset-top');
+  const b = readInset('--safe-area-inset-bottom');
+  try{
+    document.documentElement.style.setProperty('--sat', t);
+    document.documentElement.style.setProperty('--sab', b);
+  }catch(e){}
+  window.__insets = { top:t, bottom:b };
+  return window.__insets;
+}
+
 /* ---------- 提供方显示名 / 控制台快捷链接 ---------- */
 // 内部 key 形如 custom178998995781, 没起名字时不要把它显示给用户
 function provName(key){
