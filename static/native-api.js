@@ -108,7 +108,7 @@
     }
     if (!key) throw new Error('请先在设置里填写「' + prov + '」的 API Key');
 
-    // 逐级降级: 带 thinking+temperature -> 去掉 thinking -> 再去掉 temperature
+    // 逐级降级: 带 thinking+temperature -> 去 thinking -> 再去 temperature -> 最简 {model, messages}
     const variants = [];
     const v1 = { model: body.__model, messages: body.messages };
     if (body.temperature != null) v1.temperature = body.temperature;
@@ -116,11 +116,13 @@
     variants.push(v1);
     if (v1.thinking) { const v = Object.assign({}, v1); delete v.thinking; variants.push(v); }
     if (v1.temperature != null) { const v = Object.assign({}, v1); delete v.thinking; delete v.temperature; variants.push(v); }
+    variants.push({ model: body.__model, messages: body.messages });   // 最简: 排除一切参数因素
 
-    let last = null;
+    let last = null, tried = [];
     for (let i = 0; i < variants.length; i++) {
       const r = await httpJson('POST', base + '/chat/completions',
         { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, variants[i], timeoutMs || 300000);
+      tried.push('#' + (i + 1) + '=' + r.status);
       if (r.status === 200) {
         const d = r.data || {};
         const msg = ((d.choices || [{}])[0].message || {});
@@ -129,33 +131,21 @@
         throw new Error('模型返回为空（模型=' + body.__model + '）');
       }
       last = r;
-      // 只在"参数不被支持"这类错误时才降级重试
-      const t = JSON.stringify(r.data || '').toLowerCase();
-      if (!/thinking|temperature|unsupported|not support|invalid|unknown|unexpected|extra/.test(t)) break;
+      // 只在 4xx(参数/权限类) 时继续降级; 5xx/网络错直接停下重试没意义
+      if (r.status < 400 || r.status >= 500) break;
     }
-    throw new Error('模型调用失败(HTTP ' + (last && last.status) + '，模型=' + body.__model + '): '
+    throw new Error('模型调用失败(HTTP ' + (last && last.status) + '，模型=' + body.__model + '，尝试=' + tried.join(',') + '): '
       + errText(last && last.data)
       + hint403(last && last.status, base));
   }
 
-  /** 403 常见误因: 模型/Key 与平台不匹配(BytePlus 国际站 vs 火山方舟国内站) */
+  /** 403: 同一 Key 能列模型却调不动某个模型时, 基本是 Key 的模型权限范围问题 */
   function hint403(status, base) {
     if (status !== 403) return '';
-    const isIntl = /bytepluses\.com/i.test(base);
-    const isCn = /volces\.com/i.test(base);
-    let h = '\n\n【403 通常不是 Key 错，而是「该模型没在当前这个平台上开通」】\n';
-    if (isIntl) {
-      h += '当前用的是 BytePlus 国际站(bytepluses.com)。如果模型是在「火山方舟国内站」开的，'
-         + '这里用不了 —— 两个平台的账号、模型、Key 都互不相通。\n'
-         + '· 国内站的模型 → 新建一个提供方，Base URL 填 https://ark.cn-beijing.volces.com/api/v3，';
-    } else if (isCn) {
-      h += '当前用的是火山方舟国内站(volces.com)。如果模型是在 BytePlus 国际站开的，这里用不了。\n'
-         + '· 国际站的模型 → Base URL 填 https://ark.ap-southeast.bytepluses.com/api/v3，';
-    } else {
-      h += '请确认该模型在「这个 Base URL 对应的平台」上已经开通。\n';
-    }
-    h += '并且 Key 也要用对应平台申请的。';
-    return h;
+    return '\n\n【403 说明】同一个 Key 能列出模型、却调用不了这个模型 —— 通常是这个 API Key 的「模型权限范围」'
+      + '没包含该模型（很多平台的 Key 可以只绑定部分模型）。\n'
+      + '请到控制台检查：该 API Key 是否限制了可用模型 / 是否已为该模型开通调用权限。\n'
+      + '也可以先用同平台另一个已确认能用的模型对比测试。';
   }
 
   async function optimize(body) {

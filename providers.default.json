@@ -1,25 +1,15 @@
 {
   "byteplus": {
-    "label": "BytePlus 国际站",
+    "label": "BytePlus / 火山方舟",
     "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
     "console_url": "https://console.byteplus.com/ark",
-    "console_label": "打开 BytePlus 控制台",
+    "console_label": "打开 ModelArk 控制台",
     "image_models": [
       { "id": "dola-seedream-5-0-pro-260628", "label": "Seedream 5.0 Pro" },
       { "id": "seedream-5-0", "label": "Seedream 5.0 Lite" }
     ],
     "chat_models": [
       { "id": "dola-seed-2-1-turbo", "label": "Seed 2.1 Turbo (视觉·优化)" }
-    ]
-  },
-  "volcengine": {
-    "label": "火山方舟（国内站）",
-    "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-    "console_url": "https://console.volcengine.com/ark",
-    "console_label": "打开火山方舟控制台",
-    "image_models": [],
-    "chat_models": [
-      { "id": "deepseek-v4-1-flash-260910", "label": "DeepSeek V4.1 Flash" }
     ]
   },
   "openai": {
