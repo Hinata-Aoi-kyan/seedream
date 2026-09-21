@@ -543,6 +543,20 @@ function notifyBrowser(title, body){ try{ if('Notification' in window && Notific
 const CAP = (typeof window !== 'undefined' && window.Capacitor) ? window.Capacitor : null;
 function isNative(){ try{ return !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform()); }catch(e){ return false; } }
 function plugin(name){ try{ return (CAP && CAP.Plugins && CAP.Plugins[name]) || null; }catch(e){ return null; } }
+/* 网关地址: 网页=同源(空); APK=默认指向本机 Termux 网关(可在设置里改) */
+const GW_IS_NATIVE = (function(){ try{ return !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform()); }catch(e){ return false; } })();
+let GW_BASE = '';
+try{
+  const saved = localStorage.getItem('sw_gateway') || '';
+  GW_BASE = saved || (GW_IS_NATIVE ? 'http://127.0.0.1:8765' : '');
+}catch(e){}
+GW_BASE = String(GW_BASE||'').replace(/\/+$/, '');
+function gwUrl(u){ u=String(u||''); if(!u) return u; if(/^(https?:|data:|blob:)/i.test(u)) return u; return GW_BASE + u; }
+function imgUrl(u){ return gwUrl(u); }
+function setGateway(v){
+  GW_BASE = String(v||'').trim().replace(/\/+$/, '');
+  try{ localStorage.setItem('sw_gateway', GW_BASE); }catch(e){}
+}
 function blobToBase64(blob){
   return new Promise(function(res, rej){
     const r=new FileReader();
@@ -556,7 +570,7 @@ async function saveImageFile(url, filename){
   const fs = plugin('Filesystem');
   if(isNative() && fs){
     try{
-      const blob = await (await fetch(url)).blob();
+      const blob = await (await fetch(gwUrl(url))).blob();
       const b64  = await blobToBase64(blob);
       const mime = blob.type || 'image/png';
       const media = plugin('MediaStore');
@@ -585,6 +599,7 @@ async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(await 
 async function jpost(u,b,t){ return jreq('POST',u,b,t); }
 async function jput(u,b){ return jreq('PUT',u,b); }
 async function jreq(m,u,b,timeout){
+  u = gwUrl(u);
   const limit=(timeout && timeout>0)?timeout:300000;
   const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(), limit);
   try{ const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(b),signal:ctl.signal});
@@ -886,8 +901,8 @@ function renderResults(box, d, ctx){ const total=Math.round((Date.now()-_g0)/100
     wn.style.cssText='margin:0 0 10px;color:var(--warn,#e8a33d)'; wn.innerHTML=icon('warn')+' '+esc(d.warning); box.appendChild(wn); }
   const gp=(ctx&&ctx.provider)||'', gm=(ctx&&ctx.model)||'';
   (d.images||[]).forEach(im=>{ const w=document.createElement('div'); w.className='res';
-    const img=document.createElement('img'); img.src=im.url; img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url, gp, gm);
-    const a=document.createElement('a'); a.href=im.download; a.download=''; a.innerHTML=icon('dl')+'保存';
+    const img=document.createElement('img'); img.src=imgUrl(im.url); img.style.cursor='zoom-in'; img.onclick=()=>viewImage(im.url, gp, gm);
+    const a=document.createElement('a'); a.href=imgUrl(im.download); a.download=''; a.innerHTML=icon('dl')+'保存';
     a.onclick=function(e){ e.preventDefault(); saveImageFile(im.download, 'seedream.png'); };
     const ed=document.createElement('a'); ed.href='#'; ed.innerHTML=icon('edit')+'局部编辑';
     ed.onclick=function(e){ e.preventDefault(); openImageEditor(im.url, gp, gm); };
@@ -1236,7 +1251,7 @@ function edPoll(taskId, btn){
           img.onload=function(){ if(!ED) return; ED.src=im.url;
             ED.nat={w:img.naturalWidth,h:img.naturalHeight};
             ED.strokes=[]; ED.rect=null; edLayout(); };
-          img.src=im.url+'?t='+Date.now();
+          img.src=imgUrl(im.url)+'?t='+Date.now();
           edBusyStop();
           ED.busy=false; btn.disabled=false; btn.textContent='发送';
           $('edHint').innerHTML=icon('check')+' 已完成 · 可以继续改这一版（已存入记录）';
@@ -1312,7 +1327,7 @@ async function histSelDelete(){
   var ids=Array.from(histSel); if(!ids.length){ toast('未选择'); return; }
   if(!confirm('确定删除选中的 '+ids.length+' 条记录？')) return;
   try{
-    var r=await fetch('/api/history/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})});
+    var r=await fetch(gwUrl('/api/history/batch'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})});
     var j=await r.json();
     toast('已删除 '+(j.deleted||ids.length)+' 条');
     histSel.clear(); histSelMode=false;
@@ -1343,7 +1358,7 @@ function renderHistory(){
   if(!rows.length){ box.innerHTML='<div class="small-note">'+(histModelFilter?'该模型暂无记录':'暂无记录')+'</div>'; return; }
   rows.forEach((h,idx)=>{ const d=document.createElement('div'); d.className='hitem'; d.setAttribute('data-id',h.id);
     d.classList.add('anim'); d.style.animationDelay=Math.min(idx*18,240)+'ms';
-    const thumb=(h.images||[])[0]; if(thumb){ const img=document.createElement('img'); img.src=thumb.url; d.appendChild(img); }
+    const thumb=(h.images||[])[0]; if(thumb){ const img=document.createElement('img'); img.src=imgUrl(thumb.url); d.appendChild(img); }
     if(histSelMode){
       const mk=document.createElement('div'); mk.className='hmark'; mk.textContent='\u2713';
       if(!histSel.has(h.id)) mk.style.opacity='0';
@@ -1356,7 +1371,7 @@ function renderHistory(){
     const small=document.createElement('small'); const dt=new Date(h.ts*1000);
     small.textContent=(dt.getMonth()+1).toString().padStart(2,'0')+'-'+dt.getDate().toString().padStart(2,'0')+' '+dt.getHours().toString().padStart(2,'0')+':'+dt.getMinutes().toString().padStart(2,'0');
     const del=document.createElement('button'); del.className='btn ghost'; del.innerHTML=icon('trash');
-    del.onclick=async e=>{ e.stopPropagation(); if(!confirm('确定删除这条生成记录？')) return; await fetch('/api/history/'+h.id,{method:'DELETE'}); loadHistory(); };
+    del.onclick=async e=>{ e.stopPropagation(); if(!confirm('确定删除这条生成记录？')) return; await fetch(gwUrl('/api/history/'+h.id),{method:'DELETE'}); loadHistory(); };
     meta.append(s,small,del); d.appendChild(meta); d.onclick=()=>openViewer(h); box.appendChild(d); }); }
 function hMeta(h){
   const items=[['模型',h.model],['尺寸',h.size],
@@ -1374,7 +1389,7 @@ function probeWH(root, h){
   const u=((h.images||[])[0]||{}).url; if(!u) return;
   const im=new Image();
   im.onload=function(){ if(im.naturalWidth) cell.textContent=im.naturalWidth+'×'+im.naturalHeight; };
-  im.src=u;
+  im.src=imgUrl(u);
 }
 function openViewer(h){
   const imgs=(h.images||[]).map(i=>i.url); if(!imgs.length){ toast('无图片'); return; }
@@ -1392,7 +1407,7 @@ function openViewer(h){
   document.body.appendChild(v);
   navPush();
   probeWH(v, h);
-  const g=v.querySelector('#vGrid'); imgs.forEach(u=>{ const img=document.createElement('img'); img.src=u;
+  const g=v.querySelector('#vGrid'); imgs.forEach(u=>{ const img=document.createElement('img'); img.src=imgUrl(u);
     img.style.cssText='width:100%;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;object-fit:contain;background:#000';
     img.onclick=()=>viewImage(u, h.provider, h.model); g.appendChild(img); }); }
 function closeViewer(fromBack){
@@ -1414,7 +1429,7 @@ function viewImage(src, prov, model){
     v.style.cssText='position:fixed;inset:0;z-index:200;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;';
     document.body.appendChild(v); navPush(); }
   lbScale=1; lbTx=0; lbTy=0; lbMoved=false;
-  v.innerHTML='<img id="lbImg" src="'+esc(src)+'" style="position:absolute;left:50%;top:50%;max-width:100vw;max-height:100vh;object-fit:contain;will-change:transform">'
+  v.innerHTML='<img id="lbImg" src="'+esc(imgUrl(src))+'" style="position:absolute;left:50%;top:50%;max-width:100vw;max-height:100vh;object-fit:contain;will-change:transform">'
     +'<button id="lbEdit" class="btn primary" style="position:absolute;right:14px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:5;box-shadow:0 6px 20px rgba(0,0,0,.4)">'+icon('edit')+' 局部编辑</button>';
   document.getElementById('lbEdit').onclick=function(e){ e.stopPropagation(); closeLightbox(); setTimeout(function(){ openImageEditor(src, lbProv, lbModel); }, 260); };
   document.getElementById('lbEdit').ontouchstart=function(e){ e.stopPropagation(); };
@@ -1510,6 +1525,35 @@ function renderSettings(skipAnim){
 function firstChar(s){ s=(s||'?'); const t=String(s).trim(); return t[0]?t[0].toUpperCase():'?'; }
 function providerListView(){
   const wrap=document.createElement('div');
+  // 网关地址(仅 APK 需要: 网页版是同源)
+  if(GW_IS_NATIVE){
+    const gw=document.createElement('div'); gw.className='sect';
+    gw.style.marginTop='0'; gw.style.paddingTop='0'; gw.style.borderTop='none';
+    gw.innerHTML='<h4>网关地址</h4>'
+      +'<input type="text" id="gwInput" value="'+esc(GW_BASE)+'" placeholder="http://127.0.0.1:8765" autocapitalize="off" spellcheck="false">'
+      +'<div class="small-note">APK 需要连到手机上的 Termux 网关。先确认已运行 <b>bash manage.sh start</b>，再回这里点「测试连接」。</div>'
+      +'<div class="addbar" style="margin-top:8px"><button class="btn small" id="gwTestBtn">测试连接</button></div>'
+      +'<div class="small-note" id="gwTestNote"></div>';
+    wrap.appendChild(gw);
+    setTimeout(function(){
+      const el=document.getElementById('gwInput');
+      if(el){ el.value=GW_BASE;
+        el.addEventListener('change', function(){ setGateway(el.value); toast('已保存网关地址'); }); }
+      const tb=document.getElementById('gwTestBtn');
+      if(tb) tb.addEventListener('click', async function(){
+        const note=document.getElementById('gwTestNote');
+        const el2=document.getElementById('gwInput');
+        if(el2) setGateway(el2.value);
+        if(note) note.textContent='测试中…';
+        try{
+          const r=await jget('/api/health');
+          if(note) note.innerHTML=icon('check')+' 连接成功 · 服务器时间 '+esc(r.time||'');
+        }catch(e){
+          if(note) note.textContent='连不上：'+(e.message||e)+'（确认 Termux 里已 bash manage.sh start）';
+        }
+      });
+    }, 0);
+  }
   // 顶部: 标题"API设置" + "新增提供方"(最右)
   const top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px';
   const h=document.createElement('div'); h.style.cssText='font-size:18px;font-weight:700;color:var(--txt)'; h.textContent='API 设置';
