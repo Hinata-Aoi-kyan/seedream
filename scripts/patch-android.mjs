@@ -53,6 +53,45 @@ if (xml !== before) {
   console.log('[patch] AndroidManifest.xml 无需改动');
 }
 
+/** ---------- build.gradle: 版本号 + 固定签名密钥 ---------- */
+const GRADLE = path.join(ROOT, 'android/app/build.gradle');
+if (fs.existsSync(GRADLE)) {
+  let g = fs.readFileSync(GRADLE, 'utf8');
+  const before2 = g;
+
+  const ver = process.env.BUILD_VERSION || '0';
+  const code = process.env.BUILD_CODE || ver.replace(/\D/g, '') || '1';
+
+  // 版本号
+  g = g.replace(/versionCode\s+\d+/, `versionCode ${code}`);
+  g = g.replace(/versionName\s+"[^"]*"/, `versionName "1.0.${ver}"`);
+
+  // 覆盖 debug 签名配置 -> 用仓库里固定的密钥(保证每次构建签名一致, 可覆盖安装)
+  const ks = '../../signing/seedream.jks';
+  if (g.includes('signingConfigs') && !g.includes(ks)) {
+    g = g.replace(/signingConfigs\s*\{/, `signingConfigs {
+        seedream {
+            storeFile file('${ks}')
+            storePassword 'seedream'
+            keyAlias 'seedream'
+            keyPassword 'seedream'
+        }
+`);
+    // debug 构建类型改用我们的签名(必须插到 buildTypes 里的 debug 块, 不是 buildTypes 本身)
+    g = g.replace(/(buildTypes\s*\{[\s\S]*?debug\s*\{)/, '$1\n            signingConfig signingConfigs.seedream');
+    console.log('[patch] + 签名配置 seedream.jks');
+  }
+
+  if (g !== before2) {
+    fs.writeFileSync(GRADLE, g);
+    console.log(`[patch] build.gradle 已更新 (versionCode=${code}, versionName=1.0.${ver})`);
+  } else {
+    console.log('[patch] build.gradle 无需改动');
+  }
+} else {
+  console.warn('[patch] 未找到 android/app/build.gradle');
+}
+
 /** 应用名 */
 if (fs.existsSync(STRINGS)) {
   let s = fs.readFileSync(STRINGS, 'utf8');

@@ -1,6 +1,7 @@
 /**
  * 把网页文件收集到 www/ 供 Capacitor 打包。
- * 单一来源: 仓库根目录的 index.html / static/ / manifest.json / sw.js
+ * 单一来源: 仓库根目录的 index.html / static/ / manifest.json / sw.js / providers.default.json
+ * 同时注入构建标记(版本/提交/时间), 便于在 App 里确认装的是哪一版。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,4 +28,22 @@ for (const d of DIRS) {
   fs.cpSync(src, path.join(WWW, d), { recursive: true });
   console.log('[prepare-www] 复制', d + '/');
 }
+
+// ---- 注入构建标记 ----
+const version = process.env.BUILD_VERSION || 'dev';
+const sha = (process.env.GITHUB_SHA || 'local').slice(0, 7);
+const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
+const stamp = `v${version} · ${sha} · ${when}`;
+const idx = path.join(WWW, 'index.html');
+let html = fs.readFileSync(idx, 'utf8');
+const META_RE = /<meta\s+name="build-stamp"[^>]*>\s*/i;
+html = html.replace(META_RE, '');                       // 先清旧的, 保证幂等
+if (html.includes('<head>')) {
+  html = html.replace('<head>', `<head>\n<meta name="build-stamp" content="${stamp}">`);
+  fs.writeFileSync(idx, html);
+  console.log('[prepare-www] 构建标记:', stamp);
+} else {
+  console.warn('[prepare-www] 未找到 <head>, 跳过构建标记');
+}
+
 console.log('[prepare-www] 完成 ->', WWW);

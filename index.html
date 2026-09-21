@@ -215,6 +215,7 @@
   .eyebtn.on{color:var(--acc)}
   .eyebtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .small-note{font-size:11px;color:var(--mut);margin-top:6px}
+  .buildstamp{text-align:center;font-size:11px;color:var(--mut);opacity:.75;margin:18px 0 4px;line-height:1.6}
   .toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:var(--card2);
         border:1px solid var(--line);padding:11px 18px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.25)}
   .toast.show{opacity:1}
@@ -1571,6 +1572,12 @@ function providerListView(){
   row2.appendChild(search); wrap.appendChild(row2);
   const keys=Object.keys(CONFIG).filter(k=>!provSearch || ((CONFIG[k].label||k).toLowerCase().includes(provSearch)));
   keys.forEach(k=>wrap.appendChild(providerRow(k)));
+  // 构建标记(便于确认装的是哪一版)
+  const bs=document.createElement('div'); bs.className='buildstamp';
+  let stamp='';
+  try{ const m=document.querySelector('meta[name="build-stamp"]'); stamp=m?m.getAttribute('content'):''; }catch(e){}
+  bs.textContent = (stamp ? ('构建 '+stamp) : '开发版(未标记)');
+  wrap.appendChild(bs);
   return wrap;
 }
 function providerRow(key){

@@ -11,10 +11,11 @@ on:
       - 'package.json'
       - 'capacitor.config.json'
       - 'scripts/**'
+      - 'signing/**'
       - '.github/workflows/android.yml'
 
 permissions:
-  contents: write             # 失败回写日志 / 成功发 Release
+  contents: write             # 首次提交签名密钥 / 失败回写日志 / 发 Release
 
 env:
   LOG: /tmp/build.log
@@ -37,17 +38,37 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      # runner 镜像已预装 Android SDK，不用 setup-android(它的 sdkmanager "tools" 会失败)
+      # 固定签名密钥: 保证每次构建签名一致, 才能覆盖安装
+      - name: 准备签名密钥
+        run: |
+          set -o pipefail
+          {
+            if [ -f signing/seedream.jks ]; then
+              echo "已存在签名密钥, 复用"
+            else
+              mkdir -p signing
+              keytool -genkeypair -v \
+                -keystore signing/seedream.jks \
+                -alias seedream -keyalg RSA -keysize 2048 -validity 10950 \
+                -storepass seedream -keypass seedream \
+                -dname "CN=Seedream, OU=Personal, O=Personal, L=CN, ST=CN, C=CN"
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add -f signing/seedream.jks
+              git commit -m "ci: 生成固定签名密钥 [skip ci]"
+              git push || echo "推送失败(可能并发), 本次仍用本地生成的密钥"
+            fi
+            keytool -list -keystore signing/seedream.jks -storepass seedream | head -5
+          } 2>&1 | tee -a "$LOG" >&2
+
       - name: 检查环境
         run: |
           set -o pipefail
           {
             echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
-            echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
             SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-            echo "--- 已装 platforms ---"; ls "$SDK/platforms" 2>/dev/null || true
-            echo "--- 已装 build-tools ---"; ls "$SDK/build-tools" 2>/dev/null || true
-            echo "--- java ---"; java -version 2>&1 | head -3
+            ls "$SDK/platforms" 2>/dev/null | tail -3 || true
+            java -version 2>&1 | head -2
           } 2>&1 | tee -a "$LOG" >&2
 
       - name: 安装依赖
@@ -56,13 +77,14 @@ jobs:
           {
             npm install --no-audit --no-fund \
               @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest \
-              @capacitor/filesystem@latest @capacitor/local-notifications@latest @capacitor/app@latest
-            echo "--- 版本 ---"
+              @capacitor/filesystem@latest @capacitor/local-notifications@latest @capacitor/app@latest \
+              @capacitor-community/media@latest
             npx cap --version
-            node -e "const p=require('./node_modules/@capacitor/android/package.json');console.log('android:',p.version)"
           } 2>&1 | tee -a "$LOG" >&2
 
       - name: 收集网页文件到 www/
+        env:
+          BUILD_VERSION: ${{ github.run_number }}
         run: |
           set -o pipefail
           node scripts/prepare-www.mjs 2>&1 | tee -a "$LOG" >&2
@@ -72,7 +94,10 @@ jobs:
           set -o pipefail
           npx cap add android 2>&1 | tee -a "$LOG" >&2
 
-      - name: 打补丁(权限/明文/应用名)
+      - name: 打补丁(权限/明文/应用名/版本号/签名)
+        env:
+          BUILD_VERSION: ${{ github.run_number }}
+          BUILD_CODE: ${{ github.run_number }}
         run: |
           set -o pipefail
           node scripts/patch-android.mjs 2>&1 | tee -a "$LOG" >&2
@@ -82,25 +107,39 @@ jobs:
           set -o pipefail
           npx cap sync android 2>&1 | tee -a "$LOG" >&2
 
-      - name: 编译 Debug APK
+      - name: 编译 APK
         working-directory: android
         run: |
           set -o pipefail
           chmod +x gradlew
           { ./gradlew assembleDebug --no-daemon --stacktrace; } 2>&1 | tee -a /tmp/build.log
 
-      # ---------- 成功: 发布 Release ----------
+      - name: 重命名产物(带版本号)
+        id: apk
+        run: |
+          SRC=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+          OUT="Seedream-1.0.${{ github.run_number }}.apk"
+          cp "$SRC" "/tmp/$OUT"
+          echo "file=/tmp/$OUT" >> "$GITHUB_OUTPUT"
+          echo "name=$OUT" >> "$GITHUB_OUTPUT"
+          ls -la "/tmp/$OUT"
+          sha256sum "/tmp/$OUT"
+
+      # ---------- 成功: 发 Release (带版本号的标签, 下载 URL 唯一, 避开 CDN 缓存) ----------
       - name: 发布 Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: apk-latest
-          name: "Seedream APK (自动构建)"
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Seedream v1.0.${{ github.run_number }}"
           body: |
-            自动构建产物
-            - commit: ${{ github.sha }}
-            - 运行: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+            **版本** v1.0.${{ github.run_number }}
+            - 提交: `${{ github.sha }}`
+            - 构建时间: ${{ github.event.head_commit.timestamp }}
+            - 签名: 固定密钥（可直接覆盖安装，无需卸载）
+
+            下载下面的 APK 安装即可。
+          files: ${{ steps.apk.outputs.file }}
           fail_on_unmatched_files: true
 
       # ---------- 失败: 回写日志 ----------
