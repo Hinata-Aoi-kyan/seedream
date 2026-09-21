@@ -1,7 +1,0 @@
-{
-  "status": "failure",
-  "sha": "687ca32379e6267298dffd6167fd418d4d8a99bf",
-  "run_id": "35588124517",
-  "run_url": "https://github.com/Hinata-Aoi-kyan/seedream/actions/runs/35588124517",
-  "log_tail": "ANDROID_HOME=/usr/local/lib/android/sdk\nANDROID_SDK_ROOT=/usr/local/lib/android/sdk\n--- 已装 platforms ---\nandroid-34\nandroid-34-ext10\nandroid-34-ext11\nandroid-34-ext12\nandroid-34-ext8\nandroid-35\nandroid-35-ext14\nandroid-35-ext15\nandroid-36\nandroid-36-ext18\nandroid-36-ext19\nandroid-36.1\nandroid-37.0\nandroid-37.1\nandroid-37.2\nandroid-37.2-beta1\nandroid-37.2-beta2\nandroid-37.2-beta3\n--- 已装 build-tools ---\n34.0.0\n35.0.0\n35.0.1\n36.0.0\n36.1.0\n37.0.0\n--- java ---\nopenjdk version \"21.0.12.1\" 2026-08-18 LTS\nOpenJDK Runtime Environment Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS, mixed mode, sharing)\nnpm warn EBADENGINE Unsupported engine {\nnpm warn EBADENGINE   package: '@capacitor/cli@8.5.2',\nnpm warn EBADENGINE   required: { node: '>=22.0.0' },\nnpm warn EBADENGINE   current: { node: 'v20.20.2', npm: '10.8.2' }\nnpm warn EBADENGINE }\nnpm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).\n\nadded 102 packages in 7s\n--- 版本 ---\n\u001b[31m[fatal]\u001b[39m The Capacitor CLI requires NodeJS >=22.0.0\n        Please install the latest LTS version.\n"
-}

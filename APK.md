@@ -1,61 +1,65 @@
 # 打包 Android APK
 
-沙箱里没有 JDK / Android SDK，**APK 由 GitHub Actions 云端构建**（工作流见 `.github/workflows/android.yml`）。
+沙箱里没有 JDK / Android SDK，**APK 由 GitHub Actions 云端构建**。
 
-## 怎么出包
+## 拿到 APK
 
-1. 把代码推到 `main`（改动 `index.html` / `package.json` / `scripts/**` 等会自动触发构建）
-2. 打开仓库 **Actions** 标签 → **Build Android APK** → 等 3~8 分钟
-3. 构建完成后在该次运行页面底部 **Artifacts** 下载 `seedream-apk`
-4. 解压得到 `app-debug.apk`，传到手机安装（需在系统里允许「安装未知来源应用」）
-
-也可以手动触发：Actions → Build Android APK → **Run workflow**。
-
-## 工程结构
+**每推一次代码自动构建**，成功后发布到 Release（固定链接，始终是最新版）：
 
 ```
-package.json            # Capacitor 依赖(CI 里用 @latest 安装)
-capacitor.config.json   # appId / webDir=www / CapacitorHttp 开启
-scripts/prepare-www.mjs # 把 index.html、static/ 等收集到 www/ (单一来源)
-scripts/patch-android.mjs # 给生成的 Android 工程打补丁(权限/明文/应用名)
-.github/workflows/android.yml # 云构建
+https://github.com/Hinata-Aoi-kyan/seedream/releases/download/apk-latest/app-debug.apk
 ```
 
-`www/`、`android/`、`node_modules/` 都是**构建产物，不入库**。
+或：仓库 → **Releases** → `apk-latest` → 下载 `app-debug.apk`（约 4.2 MB）
+也可以从 Actions 运行页面的 **Artifacts** 下载。
 
-## 已经处理的「坑」
+### 安装
+1. 手机浏览器打开上面的链接下载
+2. 系统设置里允许「安装未知来源应用」（针对浏览器/文件管理器）
+3. 点开 apk 安装。这是 **debug 签名**，个人用没问题；Play Protect 可能提示，选「仍要安装」
+
+## 首次使用
+
+APK 打开后 → 底部 **设置** → 顶部 **网关地址**（默认 `http://127.0.0.1:8765`）：
+
+1. 先在 Termux 里确保网关已启动：`cd ~/seedream-web && bash manage.sh start`
+2. 回到 APK 点 **测试连接** —— 显示「连接成功 · 服务器时间 xx:xx:xx」即可用
+3. 如果连不上：确认网关在跑、端口是 8765、网关地址没写错
+
+> 之后路线 B 做完就不需要 Termux 了。
+
+## 构建状态怎么看
+
+- **成功**：自动发 Release（上面的链接）
+- **失败**：工作流把日志写回仓库 `.ci/status.json`，用 GitHub API 就能读（当前 PAT 无 Actions 权限也能看）
+
+## 已处理的「坑」
 
 | 坑 | 处理 |
 |---|---|
-| 通知 | `sysNotify()`：APK 走 **LocalNotifications**，网页走 Notification API（`requestNotif()` 同步适配） |
-| 存相册 | `saveImageFile()`：APK 走原生（优先自定义 `MediaStore` 插件，退回 Filesystem/文档目录），网页走 `<a download>` |
+| 通知 | `sysNotify()`：APK 走 **LocalNotifications**，网页走 Notification API |
+| 存相册 | `saveImageFile()`：APK 走原生（优先 `MediaStore` 插件 → 退回 Filesystem），网页走 `<a download>` |
 | 权限 | 构建时自动补 `INTERNET` / `POST_NOTIFICATIONS` / `READ_MEDIA_IMAGES` / `WRITE_EXTERNAL_STORAGE(maxSdk=32)` |
 | 明文 HTTP | 打开 `usesCleartextTraffic`（连本机 `http://127.0.0.1:8765` 需要） |
-| 组件导出 | 保留 Capacitor 默认的 `MainActivity exported=true`（启动入口必须导出），其余组件不导出 |
-| CORS | 开启 **CapacitorHttp** —— 请求走原生层，**不受 CORS 限制** |
+| CORS | 开启 **CapacitorHttp** —— 请求走原生层，不受 CORS 限制 |
 | 应用名 | 打包时改成 `Seedream` |
+| 局域网 | APK 的 WebView 加载应用内文件，**不再对外开端口** ✅ |
 
-## 重要：局域网问题
+## 踩过的构建坑（留给以后）
 
-- APK 里 WebView 加载的是**应用内页面**，不再对局域网开放 ✅
-- 但如果 API 仍然请求 Termux 里的网关（`127.0.0.1:8765`），**那个网关还是绑着 `0.0.0.0`** → 局域网风险仍在
-- 彻底解决有两条路（见下）
+1. **`android-actions/setup-android@v3` 会失败** —— 它内部执行 `sdkmanager "tools"`，而 `tools` 包已从 SDK 仓库移除。
+   → runner 镜像本来就预装 Android SDK（`ANDROID_HOME=/usr/local/lib/android/sdk`），**不要用这个 action**
+2. **Capacitor 8 的 CLI 要求 Node ≥ 22** —— 用 Node 20 会报 `The Capacitor CLI requires NodeJS >=22.0.0`
+3. **PAT 必须有 `Workflows` 权限**才能推 `.github/workflows/` 下的文件
 
 ## 后续路线
 
-**路线 A（当前）**：APK 作为客户端，仍连 Termux 网关
-- 优点：零改动，先跑通打包流程
-- 缺点：仍需开着 Termux；局域网问题取决于网关的 HOST 设置
-
-**路线 B（彻底自包含）**：把网关逻辑搬进 APK
-- 让 WebView 里的 JS 直接用 **CapacitorHttp** 调云端接口（原生层无 CORS），不再需要本地网关
+**路线 B（彻底自包含）**：让 WebView 里的 JS 直接用 **CapacitorHttp** 调云端接口，不再需要本地网关
 - 历史记录换 IndexedDB / Filesystem；通知、存图已用原生
-- 结果：**没有监听端口**，任何设备/任何 App 都连不上 → 彻底无局域网问题
-- 代价：需要把 `gateway.py` 的业务逻辑移植成 JS（约 400 行）
+- 结果：**没有监听端口**，任何设备/任何 App 都连不上 → 彻底无局域网问题，也不需要 Termux
+- 代价：把 `gateway.py` 的业务逻辑移植成 JS（约 400 行）
 
 ## 本地想自己构建
-
-需要 JDK 17+ 和 Android SDK：
 
 ```bash
 npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest \
@@ -65,8 +69,8 @@ npx cap add android
 node scripts/patch-android.mjs
 npx cap sync android
 cd android && ./gradlew assembleDebug
-# 产物: android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
 
 ## 首次启用（重要）
 

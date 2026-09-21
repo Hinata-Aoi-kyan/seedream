@@ -405,6 +405,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="/static/Sortable.min.js"></script>
+<script src="/static/native-api.js"></script>
 <script>
 window.onerror=function(msg,src,line,col,err){ try{ localStorage.setItem('sw_err', msg+' @'+line+':'+col); document.title='ERR '+msg+' @'+line+':'+col; }catch(e){} };
 window.addEventListener('unhandledrejection',function(e){ try{ localStorage.setItem('sw_err','REJ '+String(e.reason)); document.title='REJ '+String(e.reason); }catch(x){} });
@@ -543,16 +544,18 @@ function notifyBrowser(title, body){ try{ if('Notification' in window && Notific
 const CAP = (typeof window !== 'undefined' && window.Capacitor) ? window.Capacitor : null;
 function isNative(){ try{ return !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform()); }catch(e){ return false; } }
 function plugin(name){ try{ return (CAP && CAP.Plugins && CAP.Plugins[name]) || null; }catch(e){ return null; } }
-/* 网关地址: 网页=同源(空); APK=默认指向本机 Termux 网关(可在设置里改) */
+/* 网关地址: 网页=同源(空); APK(方案C)=不需要网关, 全部由本地 native-api 处理 */
 const GW_IS_NATIVE = (function(){ try{ return !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform()); }catch(e){ return false; } })();
 let GW_BASE = '';
-try{
-  const saved = localStorage.getItem('sw_gateway') || '';
-  GW_BASE = saved || (GW_IS_NATIVE ? 'http://127.0.0.1:8765' : '');
-}catch(e){}
-GW_BASE = String(GW_BASE||'').replace(/\/+$/, '');
-function gwUrl(u){ u=String(u||''); if(!u) return u; if(/^(https?:|data:|blob:)/i.test(u)) return u; return GW_BASE + u; }
-function imgUrl(u){ return gwUrl(u); }
+try{ GW_BASE = String(localStorage.getItem('sw_gateway')||'').replace(/\/+$/, ''); }catch(e){}
+function gwUrl(u){ u=String(u||''); if(!u) return u; if(/^(https?:|data:|blob:|file:|content:|capacitor:)/i.test(u)) return u; return GW_BASE + u; }
+function imgUrl(u){
+  u = String(u||'');
+  if(!u) return u;
+  if(/^(https?:|data:|blob:|file:|content:|capacitor:)/i.test(u)) return u;
+  if(GW_IS_NATIVE && window.NATIVE_API && u.indexOf('/img/')===0) return window.NATIVE_API.imgSrcOf(u.slice(5));
+  return GW_BASE + u;
+}
 function setGateway(v){
   GW_BASE = String(v||'').trim().replace(/\/+$/, '');
   try{ localStorage.setItem('sw_gateway', GW_BASE); }catch(e){}
@@ -599,6 +602,11 @@ async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(await 
 async function jpost(u,b,t){ return jreq('POST',u,b,t); }
 async function jput(u,b){ return jreq('PUT',u,b); }
 async function jreq(m,u,b,timeout){
+  // APK(方案C): 全部走本地实现, 不经网络、无端口
+  if(GW_IS_NATIVE && window.NATIVE_API && window.NATIVE_API.handle){
+    const r = await window.NATIVE_API.handle(m, u, b);
+    if(r !== undefined) return r;
+  }
   u = gwUrl(u);
   const limit=(timeout && timeout>0)?timeout:300000;
   const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(), limit);
@@ -676,6 +684,18 @@ function fillDataIcons(root){
 async function init(){
   dstep('0-start');
   applyTheme(); requestNotif(); fillDataIcons();
+  if(GW_IS_NATIVE && window.NATIVE_API){
+    try{ await window.NATIVE_API.ensureCfg(); }catch(e){}
+    try{ await window.NATIVE_API.fileBase(); }catch(e){}
+    // 保证默认提供方存在(首次安装)
+    try{
+      const c = await jget('/api/config');
+      if(!c || !Object.keys(c).length){
+        const d = await (await fetch('/providers.default.json')).json();
+        await jput('/api/config', d);
+      }
+    }catch(e){}
+  }
   dstep('1-before-models');
   MODELS = await jget('/api/models'); dstep('2-models-ok n='+(MODELS?Object.keys(MODELS).length:'x'));
   CONFIG = await jget('/api/config'); dstep('3-config-ok n='+(CONFIG?Object.keys(CONFIG).length:'x'));
@@ -1525,35 +1545,6 @@ function renderSettings(skipAnim){
 function firstChar(s){ s=(s||'?'); const t=String(s).trim(); return t[0]?t[0].toUpperCase():'?'; }
 function providerListView(){
   const wrap=document.createElement('div');
-  // 网关地址(仅 APK 需要: 网页版是同源)
-  if(GW_IS_NATIVE){
-    const gw=document.createElement('div'); gw.className='sect';
-    gw.style.marginTop='0'; gw.style.paddingTop='0'; gw.style.borderTop='none';
-    gw.innerHTML='<h4>网关地址</h4>'
-      +'<input type="text" id="gwInput" value="'+esc(GW_BASE)+'" placeholder="http://127.0.0.1:8765" autocapitalize="off" spellcheck="false">'
-      +'<div class="small-note">APK 需要连到手机上的 Termux 网关。先确认已运行 <b>bash manage.sh start</b>，再回这里点「测试连接」。</div>'
-      +'<div class="addbar" style="margin-top:8px"><button class="btn small" id="gwTestBtn">测试连接</button></div>'
-      +'<div class="small-note" id="gwTestNote"></div>';
-    wrap.appendChild(gw);
-    setTimeout(function(){
-      const el=document.getElementById('gwInput');
-      if(el){ el.value=GW_BASE;
-        el.addEventListener('change', function(){ setGateway(el.value); toast('已保存网关地址'); }); }
-      const tb=document.getElementById('gwTestBtn');
-      if(tb) tb.addEventListener('click', async function(){
-        const note=document.getElementById('gwTestNote');
-        const el2=document.getElementById('gwInput');
-        if(el2) setGateway(el2.value);
-        if(note) note.textContent='测试中…';
-        try{
-          const r=await jget('/api/health');
-          if(note) note.innerHTML=icon('check')+' 连接成功 · 服务器时间 '+esc(r.time||'');
-        }catch(e){
-          if(note) note.textContent='连不上：'+(e.message||e)+'（确认 Termux 里已 bash manage.sh start）';
-        }
-      });
-    }, 0);
-  }
   // 顶部: 标题"API设置" + "新增提供方"(最右)
   const top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px';
   const h=document.createElement('div'); h.style.cssText='font-size:18px;font-weight:700;color:var(--txt)'; h.textContent='API 设置';

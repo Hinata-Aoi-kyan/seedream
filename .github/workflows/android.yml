@@ -56,7 +56,8 @@ jobs:
           {
             npm install --no-audit --no-fund \
               @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest \
-              @capacitor/filesystem@latest @capacitor/local-notifications@latest @capacitor/app@latest
+              @capacitor/filesystem@latest @capacitor/local-notifications@latest @capacitor/app@latest \
+              @capacitor-community/media@latest
             echo "--- 版本 ---"
             npx cap --version
             node -e "const p=require('./node_modules/@capacitor/android/package.json');console.log('android:',p.version)"

@@ -1,202 +1,129 @@
-# Seedream Web · 手机本地生图网关
+# Seedream Web
 
-一个跑在 **手机 Termux**（或任何 Python 环境）里的本地网关 + 网页界面。
-浏览器打开 `localhost:8765` 即可：多参考图生图、接入多个 API / 不同模型、提示词优化、生成记录、结果自动存相册。
+**多模型 AI 生图工具** —— 支持参考图生图、提示词优化、局部编辑（涂抹 / 框选改一块）、生成记录。
 
-## 为什么要有这个网关
-- AI 接口（尤其 BytePlus 生图）**不允许浏览器直接跨域调用**（CORS 预检不放开 `Authorization` 头），纯网页直连会报跨域错。
-- 因此由**手机上的网关**来发起请求（服务端到云端，无跨域），网页只访问本机 `localhost`（同源，无 CORS）。
-- **API Key 只存手机本机 `keys.json`**，既不暴露给前端页面，也不外泄。
+两种形态，同一套界面：
 
-## 目录结构
-```
-seedream-web/
-├── gateway.py             # 本地网关(纯标准库 HTTP 服务)，多 provider 转发、存图、历史库、系统通知
-├── index.html             # 前端界面(单文件)
-├── providers.default.json # 默认配置(随仓库分发)
-├── providers.json         # 用户配置(gitignore，更新不覆盖)
-├── manage.sh / start.sh   # 启动/停止/重启/状态
-├── manifest.json / sw.js  # PWA
-├── static/                # 静态资源(图标、Sortable.min.js)
-└── README.md
-```
-> 敏感文件不入库：`providers.json`、`keys.json`、`prefs.json`、`history.db`、`media/`、`server.log`。
+| | **Android App（推荐）** | **网页版（Termux 网关）** |
+|---|---|---|
+| 安装 | 直接装 APK | Termux 里跑 Python 网关 |
+| 网络 | **不监听任何端口**，请求走原生层直连云端 API | 浏览器 → 本机 `localhost:8765` |
+| 说明 | 完全自包含，不需要 Termux | 需要一个本地进程常驻 |
 
-## 手机 (Termux) 运行步骤
+---
+
+## 📱 Android App
+
+### 下载
+
+**https://github.com/Hinata-Aoi-kyan/seedream/releases/latest**
+
+下载 `app-debug.apk`（约 4 MB）→ 安装（需允许「安装未知来源应用」）。
+
+> 使用 **debug 签名**，个人使用没问题；Google Play 保护机制可能提示，选择「仍要安装」。
+
+### 使用
+
+1. 打开 App → 底部 **设置** → 点「新增提供方」或编辑已有项
+2. 填 **Base URL** 和 **API Key**（Key 默认显示为黑点，点右侧眼睛看原文）
+3. 点 **检测模型** → 在结果里点 `+生图` / `+文本` 直接加入
+4. 回「生成」页 → 输入提示词 → **生成图片**
+
+生成完成后会**弹出系统通知**，图片自动保存到**手机相册**。
+
+### 自己构建
+
+推送代码后由 **GitHub Actions 自动构建**（见 `.github/workflows/android.yml`）。
+构建产物发布到 Release，也可以从 Actions 运行页下载 Artifact。
+
+细节（含踩过的坑）见 **[APK.md](APK.md)**。
+
+---
+
+## 💻 网页版（Termux）
+
+适合想在电脑/手机浏览器里用、或想改代码的人。**需要一个本地网关**，原因见下方「为什么需要网关」。
+
 ```bash
-# 1) 安装 Termux(F-Droid 版, 勿用 Play 版) 后:
+# 1) 装依赖（Termux 从 F-Droid 装，别用 Play 版）
 pkg update && pkg install python termux-api -y
-termux-setup-storage        # 授权访问相册(必须, 结果图才进相册)
-pip install -U pip
-pip install pillow          # 可选: 用于参考图压缩与尺寸读取
+termux-setup-storage          # 授权相册
 
-# 2) 把 seedream-web 文件夹拷到手机(如 ~/seedream-web)，进入目录
+# 2) 启动
 cd ~/seedream-web
-
-# 3) 启动网关(后台常驻)
-bash manage.sh start        # 状态: bash manage.sh status  停止: bash manage.sh stop
+bash manage.sh start          # 状态: status / 停止: stop / 重启: restart
 # 浏览器打开 http://localhost:8765
 ```
 
-## 首次使用
-1. 点右上角 **设置**，填入各 provider 的 API Key（BytePlus 用 `ARK_API_KEY`，OpenAI 中转用对应 Key）。
-2. 回主页输入提示词，可点 **优化提示词**（用文本模型扩写；有参考图时可用视觉模型）。
-3. **参考图**：最多 10 张，可拖拽排序、逐张指定作用（主体/姿势/构图等），本地图自动转 base64，也可粘贴 URL。
-4. 选生图模型与尺寸 → **生成图片**。任务在后台跑，可以离开页面；完成/失败会弹**手机系统通知**（点击可跳回记录页）。
-5. 结果自动保存到手机相册 `Pictures/seedream-web/`，并出现在 **生成记录**，可回看/保存/批量删除。
+可选：`pip install pillow`（不装也能用，只影响参考图压缩）
 
-## 支持的模型(在设置页或 providers.json 里改)
-- **BytePlus / 火山方舟**（`/images/generations`，支持多参考图）
-  - 生图：`dola-seedream-5-0-pro-260628`（Seedream 5.0 Pro）、`seedream-5-0`（Lite）
-  - 尺寸：只接受 `1K / 1.5K / 2K / auto` 或 `宽x高` 像素；比例值会自动映射为合法像素
-  - 内置优化档位：`standard` / `fast`（`optimize_prompt_options.mode`）
-  - 文本：`dola-seed-2-1-turbo`（视觉）、`deepseek-v4-flash`、`deepseek-v3-0324`
-- **OpenAI 兼容中转**（文生图 `/images/generations`，图生图 `/images/edits`）
-  - 生图：`gpt-image-2`、`gpt-image-2-4k`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`
-    - **2.5 两兄弟的区别**（OpenAI 官方）：`sunburst` = 基座模型，**质量为重**，画质高于 gpt-image-2；
-      `flare` = 小模型，**速度为重**，画质与 gpt-image-2 相当。要质量选 sunburst，要快选 flare。
-    - 2.5 系列额外支持 `xhigh` / `max` 质量档
-    - 尺寸约束：单边 ≤3840、双边为 **16 的倍数**、长边/短边 ≤3:1、总像素 655,360~8,294,400（>2560×1440 属实验性）
-    - **透明背景**：需配合 `png`/`webp`（选 jpeg 会自动改 png）。若该模型/中转不支持，网关会
-      **自动回退为不透明**并在结果区提示，不会直接失败。
-  - 文本：`gpt-4o`
+### 为什么需要网关
 
-## 提示词优化：关闭思考模式（默认开）
-推理类文本模型（DeepSeek V4、Seed 2.1 Turbo 等）默认会先输出思维链，**很慢**。
-网关默认注入 `thinking: {"type": "disabled"}` 跳过思考，只输出结果，**大幅提速**。
-- 前端开关：提示词优化设置 → **关闭思考模式（大幅提速）**（默认勾选）
-- 若某接口不认识该参数，网关会**自动去掉重试**，不会因此报错
-- 环境变量 `DISABLE_THINKING=0` 可全局关掉此行为
+BytePlus / OpenAI 的生图接口**不放行浏览器跨域请求**（CORS 预检不允许 `Authorization` 头），纯网页直连必失败。
+所以由手机上的小网关代发请求 —— 服务端到云端没有跨域问题，网页只访问本机同源地址。
 
-新增 provider：在设置页「新增提供方」填 Base URL + Key，点「检测模型」下拉选择添加即可，无需改代码。
+> **APK 版不需要网关**：它用 Capacitor 的原生 HTTP（`CapacitorHttp`）发请求，原生层不受 CORS 限制。
 
-## 诊断（设置页 → 任选提供方 → 诊断）
-一个按钮跑完两类检查，分两段显示：
+---
 
-| 段 | 检查内容 | 用途 |
-|---|---|---|
-| ① 接口与 Key | 接口连通、Key 有效、模型能否真正调用 | 判断**账号/配置**有没有问题 |
-| ② 网络传输 | 小请求 / 大下载 2MB / 大上传 2MB（不传 Key） | 判断**网络/代理**能不能扛住大流量 |
+## ✨ 功能
 
-两者互补：① 失败通常是 Key 或 Base URL 的问题；② 失败通常是 VPN/代理（如 FlClash）破坏大包。
-`BAD_RECORD_MAC` / `DECRYPTION_FAILED` / `EOF occurred` 这类错误基本都出在 ②，与模型无关。
-处理顺序：直接重试（网关已自动重试）→ 换节点/协议 → FlClash TUN MTU 调低到 1400/1280 → 关掉代理的 TLS 分片 → 换小尺寸。
-
-`NET_RETRIES` 可调重试次数。
-
-## 局部编辑（涂抹 / 框选改一块）
-生成结果或记录里点图片 → **局部编辑**（结果卡片上也有入口）。
-
-- **画笔**涂抹、**框选**矩形，或点 **全选** 覆盖整张图
-- 顶部下拉可**切换重绘模型**：默认**沿用这张图原本的模型**，也可随时改成别的（跨模型接力修图）
-- **✨ 优化措辞**：把口语需求改写成精准的编辑指令。用的是**局部编辑专用优化器**
-  （只输出 15~50 词的精准指令，不会像通用优化器那样扩写成整图描述）
-- 结果直接替换画面，可以**连续编辑**；每次都会存进生成记录（标题带 `[编辑]`）
-- **进度反馈**：提交后图区会出现遮罩 + 转圈，按钮变「重绘中」，并实时显示 **已用时 X 秒**；完成后自动消失
-- 支持返回手势逐级回退
-
-两条实现路径（按所选的模型自动选择）：
-
-| 服务方 | 机制 | 说明 |
-|---|---|---|
-| **OpenAI 兼容中转** | `/images/edits` + `mask` | 透明区=要重绘，不透明区=保留。**需中转支持 mask 参数** |
-| **BytePlus / Seedream** | prompt 里注入归一化坐标 | 格式 `Image 1 x1 y1 x2 y2`，坐标范围 **0-999**（左上 0,0 / 右下 999,999） |
-
-> - 图片超过 2048px 时自动降采样（图与遮罩同尺寸重编码），避免超大请求体经代理传输时出错
-> - Seedream 编辑**不接受 `size=auto`**（那是 layer_decomposition 专用），网关会自动改用 `2K`（可用 `EDIT_SEED_SIZE` 调整）
-> - 全选整图时，Seedream 侧会改用「apply to the entire image」措辞，不再说 keep unchanged
-> - 若中转不支持 mask，GPT 路径会报错；此时可把重绘模型切成 Seedream 走坐标路径
-
-## 透明背景（重要）
-透明背景需要 **png/webp**（选 jpeg 会自动改 png）。若该模型/中转不支持，网关会**自动回退为不透明**并在结果区提示。
-
-**不确定你的中转支持到什么程度？** 设置页 → 任选提供方 → **透明背景检测**，逐个模型试两条路径：
-
-| 列 | 含义 |
+| | 说明 |
 |---|---|
-| 文生图 | 传 `background=transparent` 走 `/images/generations` |
-| 图生图 | 传 `background=transparent` 走 `/images/edits`（带参考图） |
+| **多服务方** | BytePlus / 火山方舟、任何 OpenAI 兼容中转，可自由增删改 |
+| **参考图生图** | 最多 10 张，可拖拽排序、逐张指定作用（主体 / 姿势 / 构图）；自动去重 |
+| **提示词优化** | 一段式 / 两段式；可用视觉模型读参考图；**默认关闭推理模型的思考模式**（大幅提速） |
+| **局部编辑** | 画笔涂抹或框选，只改选中区域。**GPT 走 mask 精确重绘，Seedream 走归一化坐标**；支持全选整图、连续编辑 |
+| **生成记录** | 批量选择 / 保存 / 删除；显示实际尺寸、文件大小、全部参数 |
+| **主题** | 顶栏按钮三态循环：深色 → 浅色 → 跟随系统（防首屏闪烁） |
+| **通知与相册** | App 走原生通知 + 原生保存；网页版走浏览器通知 + 下载 |
+| **零 Emoji** | 全站 30 个手写 SVG 图标 |
 
-判定：`支持 ✅`（有 alpha 且有透明像素）/ `参数被忽略`（成功但无 alpha）/ `有通道但无透明像素` / `不支持`（接口报错）。
+---
 
-底部会自动给结论，例如「该中转完全没有实现透明背景」。
+## 🗂 目录结构
 
-> ⚠️ **别用提示词硬凑**：在提示词里写「透明背景」是没用的 —— 模型只会**画一个方格图案假装透明**，
-> 那不是真 alpha 通道（导出后仍是带棋盘格的实心图）。
-
-背景知识：`gpt-image-2` 的透明背景是 **2026-08-20 才以 preview 形式加入**的；部分第三方中转在
-`/images/edits` 路径上会把它转成 Responses API 的 `image_generation` 工具，从而出现 `param: tools`
-的报错 —— 这属于**中转侧实现**问题，不是参数写法问题。想用透明背景只能换支持的中转。
-
-## 动效与返回手势
-- 页面切换、二级页（设置编辑页、记录详情）、图片查看器、下拉菜单都有过渡动画
-- 尊重系统「减弱动态效果」设置
-- **安卓侧滑返回 = 返回上一级**，不会直接退出网页：
-  `图片查看器 → 记录详情 → 记录页 → 生成页`，逐级回退；在生成页再返回才退出
-
-## 安全说明（重要）
-网关上「设置 → 服务方」里的 **API Key 默认显示为黑点**，点右侧**眼睛**图标可查看原文（明文 Key 由本机接口 `/api/key` 提供）。
-
-> ⚠️ **明文 Key 只允许本机（localhost）读取**，来自局域网 IP 的请求会返回 403。
-
-网关默认监听 `0.0.0.0`，**同一 WiFi 下的其他设备可以打开**这个页面（能生图、能看记录，会消耗你的额度）。
-如果只在本机使用，建议改成只监听本机：
-
-```bash
-# 方式一：临时（当前终端）
-HOST=127.0.0.1 python3 gateway.py
-# 方式二：改 manage.sh，把 nohup 那行前面加上 HOST=127.0.0.1
+```
+seedream-web/
+├── gateway.py             # 网页版网关（纯标准库，无第三方依赖）
+├── index.html             # 前端界面（单文件）
+├── static/native-api.js   # APK 版后端（JS 实现，走原生 HTTP）
+├── providers.default.json # 默认配置（随包分发）
+├── providers.json         # 用户配置（gitignore，更新不覆盖）
+├── manage.sh / start.sh   # 启停脚本
+├── scripts/               # APK 构建辅助脚本
+├── .github/workflows/     # APK 云构建
+└── APK.md                 # 打包说明
 ```
 
-启动时若检测到对外开放，会在 `server.log` 里写一条 `⚠ HOST=0.0.0.0 ...` 提醒。
+---
 
-## 配置页操作
-- **连接与检测**：`检测模型` / `诊断` / `透明图检测` 三键同排
-  - 检测结果会列出所有可用模型，每行 `+生图` `+文本` **直接点选加入**（已加入的显示 ✓）
-- **生图/文本模型**：可下拉选择添加，或「手动」自己填；增删都是**局部刷新**，不会打断你正在输入的内容
-- **API Key**：已保存的显示为黑点；点眼睛看原文；点输入框自动清空并转明文，方便直接粘贴新 Key
-- **⋮ 菜单**：启用 / 禁用 / 删除（都有图标）
+## 🔐 安全
 
-## 通知(可选但推荐)
-网关通过 `termux-notification` 弹系统通知，点击/按钮用 `termux-open-url` 打开记录页。
-```bash
-pkg install termux-api          # 并安装 Termux:API App(F-Droid)
-# 系统设置 → 应用 → Termux:API → 通知权限 → 允许
-termux-notification --title 测试 --content 通了   # 手动验证
-```
-带按钮失败时会自动回退为纯文字通知；所有发送结果都记在 `server.log`（`notify: 已发送(带按钮)` 等）。
+- **API Key 只存在本地**：网页版存手机 `keys.json`，App 存应用私有目录
+- 网页版网关默认绑 `0.0.0.0`，**同一 WiFi 下其他设备可访问**。只在本机用的话建议：
+  ```bash
+  HOST=127.0.0.1 bash manage.sh start
+  ```
+- 明文 Key 接口 `/api/key` **仅允许本机访问**，局域网来源返回 403
+- App 版**不开任何监听端口**，同一台手机上的其他 App 也连不上
 
-## 网络诊断(出 SSL/超时错误时先点它)
-设置页 → 任选一个提供方 → **诊断**（已把原「连接测试」与「网络诊断」合并）。
+---
 
-`BAD_RECORD_MAC` / `DECRYPTION_FAILED` / `EOF occurred` 这类错误的含义是 **TLS 数据在传输中被破坏**，
-与生图模型无关，典型成因是 VPN/代理(如 FlClash) 传输较大数据包时出错——gpt-image 的响应是整图 base64
-（1K 约 1~4 MB，4K 可达 10~25 MB），越大越容易触发。处理顺序：
-1. **直接重试**（网关已自动重试 2 次；可用 `NET_RETRIES` 调整）
-2. **换节点/换协议**
-3. **FlClash 的 TUN MTU 调低到 1400 或 1280**
-4. **关闭代理的 TLS 分片/嗅探等增强项**，或临时关代理直连测试
-5. 换用较小尺寸/较低质量再试
+## ⚙️ 环境变量（网页版）
 
-## 环境变量(可选)
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `PORT` | 8765 | 网关端口 |
-| `HOST` | 0.0.0.0 | 监听地址 |
-| `MEDIA_DIR` | 自动 | 图片保存目录，默认写往 Termux 相册 |
-| `DB_PATH` | ./history.db | 历史数据库路径 |
-| `NET_RETRIES` | 2 | 传输层瞬时错误(SSL/断连/超时)的重试次数 |
-| `DISABLE_THINKING` | 1 | 置 0 则不注入 thinking=disabled（文本模型思考模式） |
-| `HTTP_UA` | SeedreamWeb/1.0 | 请求 User-Agent(部分 CDN 会拦截默认 Python UA) |
+| `PORT` | 8765 | 端口 |
+| `HOST` | 0.0.0.0 | 监听地址（设 `127.0.0.1` 可只允许本机） |
+| `MEDIA_DIR` | 自动 | 图片保存目录 |
+| `DB_PATH` | ./history.db | 历史数据库 |
+| `NET_RETRIES` | 2 | 传输层瞬时错误重试次数 |
+| `DISABLE_THINKING` | 1 | 置 0 则不注入 `thinking=disabled` |
 | `ARK_API_KEY` / `OPENAI_API_KEY` | 空 | 也可用环境变量代替 keys.json |
 
-## 说明
-- **存相册**：网关直接把图片写入 `~/storage/pictures/seedream-web`（即 `/sdcard/Pictures/seedream-web`），生成即进相册，不需要手动下载。
-- **生成记录**：存在本机 SQLite `history.db`；删除记录会同时删除相册里的原图。
-- **后台任务**：`POST /api/generate` 起线程，前端轮询 `/api/task/{id}`，因此生成期间可以切走。
-- **提示词优化**：先用文本模型把用户需求扩成结构化的高质量英文 prompt，再喂给生图模型。
+---
 
-## 更新
-```bash
-cd ~/seedream-web && git pull origin main && bash manage.sh restart
-```
+## 📄 License
+
+个人项目，随意使用。
