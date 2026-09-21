@@ -533,8 +533,54 @@ function genShow(msg){
     +'<span id="ela" style="flex:none;white-space:nowrap;color:var(--acc);font-variant-numeric:tabular-nums"> · 已用时 0 秒</span></div>';
   scrollToResults(); _gEl=document.getElementById('ela');
   if(_gEl) _gEl.textContent=' · 已用时 '+Math.round((Date.now()-_g0)/1000)+' 秒'; }
-function requestNotif(){ try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){} }
+function requestNotif(){
+  if(isNative()){ const ln=plugin('LocalNotifications'); if(ln && ln.requestPermissions){ try{ ln.requestPermissions(); }catch(e){} } return; }
+  try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){}
+}
 function notifyBrowser(title, body){ try{ if('Notification' in window && Notification.permission==='granted') new Notification(title,{body:body||'',icon:'/static/icon-192.png'}); }catch(e){} }
+
+/* ---------- 平台适配层: 网页(本地网关) / APK(Capacitor) ---------- */
+const CAP = (typeof window !== 'undefined' && window.Capacitor) ? window.Capacitor : null;
+function isNative(){ try{ return !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform()); }catch(e){ return false; } }
+function plugin(name){ try{ return (CAP && CAP.Plugins && CAP.Plugins[name]) || null; }catch(e){ return null; } }
+function blobToBase64(blob){
+  return new Promise(function(res, rej){
+    const r=new FileReader();
+    r.onload=function(){ const s=String(r.result||''); res(s.slice(s.indexOf(',')+1)); };
+    r.onerror=rej; r.readAsDataURL(blob);
+  });
+}
+/** 统一保存入口: 网页用 <a download>; APK 走原生(优先相册 MediaStore, 退回文档目录). */
+async function saveImageFile(url, filename){
+  const name = filename || 'seedream.png';
+  const fs = plugin('Filesystem');
+  if(isNative() && fs){
+    try{
+      const blob = await (await fetch(url)).blob();
+      const b64  = await blobToBase64(blob);
+      const mime = blob.type || 'image/png';
+      const media = plugin('MediaStore');
+      if(media && media.saveImage){ await media.saveImage({ base64:b64, fileName:name, mimeType:mime }); }
+      else { await fs.writeFile({ path:name, data:b64, directory:'DOCUMENTS', recursive:true }); }
+      toast('已保存');
+      return;
+    }catch(e){ console.warn('native save failed, fallback to web', e); }
+  }
+  const a=document.createElement('a'); a.href=url; a.download=name; a.style.display='none';
+  document.body.appendChild(a); a.click(); setTimeout(function(){ a.remove(); }, 500);
+}
+/** 系统通知: APK 走 LocalNotifications; 网页走浏览器 Notification. */
+async function sysNotify(title, body){
+  const ln = plugin('LocalNotifications');
+  if(isNative() && ln){
+    try{
+      if(ln.requestPermissions){ await ln.requestPermissions(); }
+      await ln.schedule({ notifications:[{ id: Math.floor(Date.now() % 2147483647), title:title, body:body||'' }] });
+      return;
+    }catch(e){ console.warn('local notification failed', e); }
+  }
+  notifyBrowser(title, body);
+}
 async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
 async function jpost(u,b,t){ return jreq('POST',u,b,t); }
 async function jput(u,b){ return jreq('PUT',u,b); }
@@ -833,15 +879,6 @@ function clearDraftUI(){
 }
 
 /* ---------- 生成(后台任务+轮询) ---------- */
-async function saveImageFile(url, filename){
-  // 统一保存入口: 网页用 <a download>; APK(Capacitor) 时改为原生写相册/文件
-  try{
-    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem){
-      // 未来 APK: 用 Filesystem/Media 写相册 (封包时实现)
-    }
-  }catch(e){}
-  const a=document.createElement('a'); a.href=url; a.download=filename||''; a.style.display='none'; document.body.appendChild(a); a.click(); setTimeout(function(){ a.remove(); }, 500);
-}
 function renderResults(box, d, ctx){ const total=Math.round((Date.now()-_g0)/1000); box.innerHTML='';
   const sum=document.createElement('div'); sum.className='small-note'; sum.style.cssText='margin:0 0 10px;color:var(--acc2)';
   sum.innerHTML=icon('check')+' 生成完成 · 总耗时 '+total+' 秒'; box.appendChild(sum);
@@ -857,10 +894,10 @@ function renderResults(box, d, ctx){ const total=Math.round((Date.now()-_g0)/100
     w.append(img,a,ed); box.appendChild(w); }); }
 function pollTask(taskId, box, btnAll){
   const iv=setInterval(async ()=>{ try{ const t=await jget('/api/task/'+taskId); const st=t._status;
-    if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t,_lastGenCtx); notifyBrowser('生成完成','已生成 '+(t.images||[]).length+' 张');
+    if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t,_lastGenCtx); sysNotify('生成完成','已生成 '+(t.images||[]).length+' 张');
       toast('生成成功'); clearDraft(); loadHistory(); btnAll.forEach(b=>b.disabled=false); }
     else if(st==='failed'){ clearInterval(iv); genTimerStop();
-      box.innerHTML='<div class="small-note">失败: '+esc(t.error||'未知错误')+'</div>'; notifyBrowser('生成失败',t.error||'未知错误');
+      box.innerHTML='<div class="small-note">失败: '+esc(t.error||'未知错误')+'</div>'; sysNotify('生成失败',t.error||'未知错误');
       toast('生成失败'); btnAll.forEach(b=>b.disabled=false); } }catch(e){} }, 3000); }
 async function generate(){
   const userPrompt=$('prompt').value; if(!userPrompt.trim()){ toast('请输入提示词'); return; }

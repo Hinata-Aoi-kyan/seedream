@@ -9,3 +9,10 @@ server.pid
 __pycache__/
 *.pyc
 .env
+
+# --- Android / Capacitor (由 CI 生成, 不入库) ---
+node_modules/
+www/
+android/
+ios/
+package-lock.json

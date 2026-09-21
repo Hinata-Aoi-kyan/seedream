@@ -1,0 +1,11 @@
+{
+  "name": "seedream-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Seedream Web —— Android 封装 (Capacitor)。构建由 GitHub Actions 完成。",
+  "scripts": {
+    "prepare-www": "node scripts/prepare-www.mjs",
+    "sync": "cap sync android",
+    "apk": "cd android && ./gradlew assembleDebug"
+  }
+}
