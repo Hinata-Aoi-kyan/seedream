@@ -1,0 +1,7 @@
+{
+  "status": "failure",
+  "sha": "10d6f1b72bfd6b88a250676066ce6a248161520b",
+  "run_id": "35587733366",
+  "run_url": "https://github.com/Hinata-Aoi-kyan/seedream/actions/runs/35587733366",
+  "log_tail": "\n[/tmp/build.log] [Errno 2] No such file or directory: '/tmp/build.log'"
+}
