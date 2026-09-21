@@ -4,34 +4,30 @@
 
 ## 拿到 APK
 
-**每推一次代码自动构建**，成功后发布到 Release（固定链接，始终是最新版）：
+**https://github.com/Hinata-Aoi-kyan/seedream/releases/latest**
 
-```
-https://github.com/Hinata-Aoi-kyan/seedream/releases/download/apk-latest/app-debug.apk
-```
+每次推送代码会自动构建并发布一个带版本号的 Release（`v1.0.<构建号>`），
+文件名形如 `Seedream-1.0.10.apk`。
 
-或：仓库 → **Releases** → `apk-latest` → 下载 `app-debug.apk`（约 4.2 MB）
-也可以从 Actions 运行页面的 **Artifacts** 下载。
+> **为什么用带版本号的标签**：`apk-latest` 这种固定 URL 会被 CDN 缓存，可能出现"下载了还是旧包"。
+> 每次 URL 唯一就没这个问题。`releases/latest` 页面始终指向最新一版。
 
-### 安装
-1. 手机浏览器打开上面的链接下载
-2. 系统设置里允许「安装未知来源应用」（针对浏览器/文件管理器）
-3. 点开 apk 安装。这是 **debug 签名**，个人用没问题；Play Protect 可能提示，选「仍要安装」
+### 安装 / 更新
+- **签名固定**：仓库里的 `signing/seedream.jks` 是固定的签名密钥，所有构建共用同一个签名
+  → 装过之后可以**直接覆盖安装**，不用卸载、不丢设置
+- 从旧版本（v1.0.9 及更早）升级：那些版本用的是一次性 debug 密钥，
+  **需要最后卸载重装一次**，之后就正常了
+- 装好后在 **设置页最底部** 能看到构建标记（`构建 v1.0.10 · 033915d · 时间`），
+  用来确认装的到底是哪一版
 
-## 首次使用
-
-APK 打开后 → 底部 **设置** → 顶部 **网关地址**（默认 `http://127.0.0.1:8765`）：
-
-1. 先在 Termux 里确保网关已启动：`cd ~/seedream-web && bash manage.sh start`
-2. 回到 APK 点 **测试连接** —— 显示「连接成功 · 服务器时间 xx:xx:xx」即可用
-3. 如果连不上：确认网关在跑、端口是 8765、网关地址没写错
-
-> 之后路线 B 做完就不需要 Termux 了。
+### 关于签名密钥
+`signing/seedream.jks` 提交在仓库里（口令 `seedream`），这样 CI 每次能用同一个签名。
+这是个**个人使用**的密钥；如果你要正式分发，建议换成你自己的密钥并改用 GitHub Secrets 存放。
 
 ## 构建状态怎么看
 
 - **成功**：自动发 Release（上面的链接）
-- **失败**：工作流把日志写回仓库 `.ci/status.json`，用 GitHub API 就能读（当前 PAT 无 Actions 权限也能看）
+- **失败**：工作流把日志写回仓库 `.ci/status.json`，用 GitHub API 就能读
 
 ## 已处理的「坑」
 
