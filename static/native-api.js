@@ -24,7 +24,7 @@
   // ---------- 配置(首次从随包默认配置初始化) ----------
   let CFG = Sget(SK.cfg, null);
   async function ensureCfg() {
-    if (CFG) return CFG;
+    if (CFG && Object.keys(CFG).length) return CFG;   // 空对象视为未初始化
     try {
       const r = await fetch('/providers.default.json');
       CFG = await r.json();

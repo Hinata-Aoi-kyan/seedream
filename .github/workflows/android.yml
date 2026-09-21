@@ -114,16 +114,37 @@ jobs:
           chmod +x gradlew
           { ./gradlew assembleDebug --no-daemon --stacktrace; } 2>&1 | tee -a /tmp/build.log
 
-      - name: 重命名产物(带版本号)
+      - name: 用固定密钥重签 + 校验
         id: apk
         run: |
-          SRC=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
-          OUT="Seedream-1.0.${{ github.run_number }}.apk"
-          cp "$SRC" "/tmp/$OUT"
-          echo "file=/tmp/$OUT" >> "$GITHUB_OUTPUT"
-          echo "name=$OUT" >> "$GITHUB_OUTPUT"
-          ls -la "/tmp/$OUT"
-          sha256sum "/tmp/$OUT"
+          set -o pipefail
+          {
+            SRC=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+            echo "原始产物: $SRC ($(stat -c%s "$SRC") 字节)"
+            BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | sort -V | tail -1)
+            [ -z "$BT" ] && BT=$(ls -d "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"/build-tools/*/ | sort -V | tail -1)
+            echo "build-tools: $BT"
+
+            echo '--- 重签前证书(Gradle 产物) ---'
+            "${BT}apksigner" verify --print-certs "$SRC" 2>&1 | grep -i "SHA-256" || true
+
+            "${BT}zipalign" -f -p 4 "$SRC" /tmp/aligned.apk
+            "${BT}apksigner" sign \
+              --ks signing/seedream.jks \
+              --ks-pass pass:seedream --key-pass pass:seedream \
+              --v1-signing-enabled true --v2-signing-enabled true \
+              --out /tmp/signed.apk /tmp/aligned.apk
+
+            echo '--- 重签后证书(固定密钥) ---'
+            "${BT}apksigner" verify --print-certs /tmp/signed.apk 2>&1 | grep -i "SHA-256" || true
+
+            OUT="Seedream-1.0.${{ github.run_number }}.apk"
+            cp /tmp/signed.apk "/tmp/$OUT"
+            echo "file=/tmp/$OUT" >> "$GITHUB_OUTPUT"
+            echo "name=$OUT" >> "$GITHUB_OUTPUT"
+            ls -la "/tmp/$OUT"
+            sha256sum "/tmp/$OUT"
+          } 2>&1 | tee -a "$LOG" >&2
 
       # ---------- 成功: 发 Release (带版本号的标签, 下载 URL 唯一, 避开 CDN 缓存) ----------
       - name: 发布 Release

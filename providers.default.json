@@ -2,6 +2,8 @@
   "byteplus": {
     "label": "BytePlus / 火山方舟",
     "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+    "console_url": "https://console.byteplus.com/ark",
+    "console_label": "打开 ModelArk 控制台",
     "image_models": [
       { "id": "dola-seedream-5-0-pro-260628", "label": "Seedream 5.0 Pro" },
       { "id": "seedream-5-0", "label": "Seedream 5.0 Lite" }
@@ -13,11 +15,14 @@
     ]
   },
   "openai": {
-    "label": "OpenAI / jojocode 中转",
-    "base_url": "https://api2.jojocode.com/v1",
+    "label": "OpenAI / 兼容中转",
+    "base_url": "https://api.openai.com/v1",
+    "console_url": "https://platform.openai.com/api-keys",
+    "console_label": "打开 API Keys 页面",
     "image_models": [
       { "id": "gpt-image-2", "label": "gpt-image-2" },
-      { "id": "gpt-image-2-4k", "label": "gpt-image-2-4k" }
+      { "id": "gpt-image-2.5-flare", "label": "gpt-image-2.5-flare（速度快）" },
+      { "id": "gpt-image-2.5-sunburst", "label": "gpt-image-2.5-sunburst（质量高）" }
     ],
     "chat_models": [
       { "id": "gpt-4o", "label": "GPT-4o" }

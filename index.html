@@ -441,6 +441,7 @@ const ICONS = {
   eye:'<svg viewBox="0 0 24 24"><path d="M2.2 12S5.8 5.8 12 5.8 21.8 12 21.8 12 18.2 18.2 12 18.2 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="2.9"/></svg>',
   eyeOff:'<svg viewBox="0 0 24 24"><path d="M3.5 3.5l17 17"/><path d="M10.3 10.4a2.9 2.9 0 0 0 3.2 3.2"/><path d="M7.1 7.2C4.2 8.9 2.2 12 2.2 12s3.6 6.2 9.8 6.2c1.6 0 3-.3 4.3-.9"/><path d="M17 16.8c2.8-1.7 4.8-4.8 4.8-4.8S18.2 5.8 12 5.8c-.9 0-1.8.1-2.6.3"/></svg>',
   search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
+  link:'<svg viewBox="0 0 24 24"><path d="M10 13.5a4.5 4.5 0 0 0 6.4 0l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1.3 1.3"/><path d="M14 10.5a4.5 4.5 0 0 0-6.4 0l-2.6 2.6a4.5 4.5 0 0 0 6.4 6.4l1.3-1.3"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
   history:'<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6l-2.5 2.5"/><path d="M3.5 8.5V4.5M3.5 8.5h4"/><path d="M12 7.5v4.5l3 1.8"/></svg>',
   x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>'
@@ -564,7 +565,10 @@ function imgUrl(u){
   u = String(u||'');
   if(!u) return u;
   if(/^(https?:|data:|blob:|file:|content:|capacitor:)/i.test(u)) return u;
-  if(GW_IS_NATIVE && window.NATIVE_API && u.indexOf('/img/')===0) return window.NATIVE_API.imgSrcOf(u.slice(5));
+  if(window.NATIVE_API && u.indexOf('/img/')===0){
+    const s = window.NATIVE_API.imgSrcOf(u.slice(5));
+    if(s) return s;
+  }
   return GW_BASE + u;
 }
 function setGateway(v){
@@ -613,8 +617,9 @@ async function jget(u){ const r=await fetch(u); if(!r.ok) throw new Error(await 
 async function jpost(u,b,t){ return jreq('POST',u,b,t); }
 async function jput(u,b){ return jreq('PUT',u,b); }
 async function jreq(m,u,b,timeout){
-  // APK(方案C): 全部走本地实现, 不经网络、无端口
-  if(GW_IS_NATIVE && window.NATIVE_API && window.NATIVE_API.handle){
+  // APK(方案C): 先交给本地实现(它内部自己判断是否原生环境; 网页版返回 undefined)
+  // 不依赖 GW_IS_NATIVE —— 避免桥接注入时机导致它被误判为 false
+  if(window.NATIVE_API && window.NATIVE_API.handle){
     const r = await window.NATIVE_API.handle(m, u, b);
     if(r !== undefined) return r;
   }
@@ -698,15 +703,17 @@ async function init(){
   GW_IS_NATIVE = isNative();
   dstep('0b-native='+GW_IS_NATIVE);
   applyTheme(); requestNotif(); fillDataIcons();
-  if(GW_IS_NATIVE && window.NATIVE_API){
+  if(window.NATIVE_API){
     try{ await window.NATIVE_API.ensureCfg(); }catch(e){}
     try{ await window.NATIVE_API.fileBase(); }catch(e){}
-    // 保证默认提供方存在(首次安装)
+    // 保证默认提供方存在(首次安装 / 配置为空 / 只有空数组的旧数据)
     try{
-      const c = await jget('/api/config');
+      let c = await jget('/api/config');
       if(!c || !Object.keys(c).length){
         const d = await (await fetch('/providers.default.json')).json();
         await jput('/api/config', d);
+        c = d;
+        toast('已添加默认提供方');
       }
     }catch(e){}
   }
@@ -732,7 +739,7 @@ function fillProviders(){ const p=$('provider'); p.innerHTML='';
     const conf=MODELS[k]; if(!conf) return false;
     return (conf.image_models||[]).length>0;   // 只显示有生图模型的提供方
   });
-  keys.forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=MODELS[k].label||k; p.appendChild(o); });
+  keys.forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=MODELS[k].label||provName(k); p.appendChild(o); });
   if(!$('provider').value && p.options.length) p.value=p.options[0].value; }
 function onProviderChange(){ const p=$('provider').value, conf=MODELS[p]||{}; if(typeof refreshOptPromptForModel==='function') refreshOptPromptForModel();
   const im=$('imageModel'); im.innerHTML='';
@@ -1570,22 +1577,61 @@ function providerListView(){
     const el=document.getElementById('provSearch');
     if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} } });
   row2.appendChild(search); wrap.appendChild(row2);
-  const keys=Object.keys(CONFIG).filter(k=>!provSearch || ((CONFIG[k].label||k).toLowerCase().includes(provSearch)));
+  const keys=Object.keys(CONFIG).filter(k=>!provSearch || (provName(k).toLowerCase().includes(provSearch)));
   keys.forEach(k=>wrap.appendChild(providerRow(k)));
   // 构建标记(便于确认装的是哪一版)
   const bs=document.createElement('div'); bs.className='buildstamp';
   let stamp='';
   try{ const m=document.querySelector('meta[name="build-stamp"]'); stamp=m?m.getAttribute('content'):''; }catch(e){}
-  bs.textContent = (stamp ? ('构建 '+stamp) : '开发版(未标记)');
+  const nat = (typeof window!=='undefined' && window.NATIVE_API) ? (window.NATIVE_API.isNative() ? '原生=是' : '原生=否') : '原生=无模块';
+  bs.textContent = (stamp ? ('构建 '+stamp) : '开发版(未标记)') + ' · ' + nat;
   wrap.appendChild(bs);
   return wrap;
 }
+/* ---------- 提供方显示名 / 控制台快捷链接 ---------- */
+// 内部 key 形如 custom178998995781, 没起名字时不要把它显示给用户
+function provName(key){
+  const p = (CONFIG && CONFIG[key]) || {};
+  const lb = String(p.label || '').trim();
+  if (lb) return lb;
+  return '未命名提供方';
+}
+function provConsoleUrl(key){
+  const p = (CONFIG && CONFIG[key]) || {};
+  if (p.console_url) return String(p.console_url);
+  const base = String(p.base_url || '').toLowerCase();
+  if (base.includes('bytepluses') || base.includes('volces')) return 'https://console.byteplus.com/ark';
+  if (base.includes('openai.com')) return 'https://platform.openai.com/api-keys';
+  return '';
+}
+function openConsole(key){
+  const url = provConsoleUrl(key);
+  if (!url) { toast('该服务方未配置控制台链接'); return; }
+  try {
+    const c = cap();
+    if (c && c.Plugins && c.Plugins.Browser && c.Plugins.Browser.open) {
+      c.Plugins.Browser.open({ url: url }); return;
+    }
+  } catch (e) {}
+  window.open(url, '_blank');
+}
+function consoleLink(key){
+  const url = provConsoleUrl(key);
+  if (!url) return '';
+  const p = (CONFIG && CONFIG[key]) || {};
+  const lb = p.console_label || '打开控制台 (配置 API Key)';
+  return '<div class="sect"><h4>快捷入口</h4>'
+    + '<button class="btn small" onclick="openConsole(\'' + key + '\')" style="width:100%;justify-content:center">'
+    + icon('link') + esc(lb) + '</button>'
+    + '<div class="small-note">没填 Key 的话点这里去控制台创建一个，回来粘贴即可</div></div>';
+}
+
 function providerRow(key){
   const p=CONFIG[key]; const nModels=(p.image_models||[]).length+(p.chat_models||[]).length;
   const enabled=p.enabled!==false;
   const el=document.createElement('div'); el.className='provrow';
   el.innerHTML=`<div class="prov-avatar">${esc(firstChar(p.label||key))}</div>
-    <div class="prov-info"><div class="prov-name">${esc(p.label||key)}</div>
+    <div class="prov-info"><div class="prov-name">${esc(provName(key))}</div>
       <div class="prov-badges"><span class="badge ${enabled?'on':''}">${enabled?'启用':'禁用'}</span><span class="badge">${nModels} 个模型</span></div></div>
     <button class="prov-menu" title="更多">${icon('more')}</button>`;
   el.onclick=(ev)=>{ ev.stopPropagation(); if(document.querySelector('.provmenu')) closeProvMenu(); openEditor(key); };
@@ -1776,7 +1822,7 @@ function resetKeyField(key){
 function providerCard(key){
   const p=CONFIG[key];
   const card=document.createElement('div'); card.className='pcard';
-  card.innerHTML=`<div class="phead"><b id="pname_${key}">${esc(p.label||key)}</b>
+  card.innerHTML=`<div class="phead"><b id="pname_${key}">${esc(provName(key))}</b>
     <button class="btn ghost" onclick="delProvider('${key}')" title="删除服务方">${icon('trash')}</button></div>
     <label>提供方名称</label>
     <input type="text" id="plabel_${key}" value="${esc(p.label||'')}" placeholder="服务方名称（如 中转 / ComfyUI）" oninput="document.getElementById('pname_${key}').textContent=this.value||'未命名'; CONFIG['${key}'].label=this.value">
@@ -1788,6 +1834,7 @@ function providerCard(key){
       <button type="button" class="eyebtn" id="peye_${key}" title="显示">${icon('eye')}</button>
     </div>
 
+    ${consoleLink(key)}
     <div class="sect">
       <h4>连接与检测</h4>
       <div class="tools">
