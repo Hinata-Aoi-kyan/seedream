@@ -789,16 +789,25 @@ function buildChatOptions(){
   if(!target){ const bp=[...cm.options].find(o=>o.value.startsWith('byteplus::')); target=bp?bp.value:(([...cm.options].find(o=>o.value)||{}).value||''); }
   if(target) cm.value=target;
 }
-function optDefaultForCurrent(){ return OPT_PROMPT_GPTIMAGE; }
-function optStorageKey(){ return 'sw_optprompt_' + curProvider(); }
+function optDefaultForCurrent(){ return isGPTSel() ? OPT_PROMPT_GPTIMAGE : DEFAULT_OPTPROMPT_TEXT; }
+function optStorageKey(){ return 'sw_optprompt_' + (curProvider()||'default'); }
+/** 读优化提示词: 本服务方存的 > 旧版本遗留 key > 按模型类型的默认值 */
+function loadOptPrompt(){
+  try{
+    const cands=[optStorageKey(), isGPTSel()?'sw_optprompt_gpt':'sw_optprompt', 'sw_optprompt'];
+    for(let i=0;i<cands.length;i++){
+      const v=localStorage.getItem(cands[i]);
+      if(v && String(v).trim()) return v;
+    }
+  }catch(e){}
+  return optDefaultForCurrent();
+}
 function setupOptPrompt(){
-  // 默认按当前模型取; 但绝不覆盖用户已保存的 Seedream 提示词
-  $('optPrompt').value = localStorage.getItem(optStorageKey()) || DEFAULT_OPTPROMPT_TEXT;
+  $('optPrompt').value = loadOptPrompt();
   $('optPrompt').oninput = ()=>{ localStorage.setItem(optStorageKey(), $('optPrompt').value); saveOptPromptDebounced(); };
   $('chatModel').onchange = ()=>{ if($('chatModel').value) localStorage.setItem('sw_chat',$('chatModel').value); }; }
 function refreshOptPromptForModel(){
-  var g = isGPTSel(); var saved = localStorage.getItem(g?'sw_optprompt_gpt':'sw_optprompt');
-  $('optPrompt').value = saved || optDefaultForCurrent();
+  $('optPrompt').value = loadOptPrompt();
 }
 async function loadPrefs(){ try{ const p=await jget('/api/prefs'); if(p.opt_prompt && !localStorage.getItem(optStorageKey())) $('optPrompt').value=p.opt_prompt; }catch(e){} }
 function saveOptPromptDebounced(){ clearTimeout(window._optpt);
@@ -935,7 +944,7 @@ async function optimizePrompt(){
     $('undoOptBtn').style.display='inline-flex'; $('undoOptBtn').innerHTML=icon('undo')+'退回原输入';
     toast('已优化提示词'); saveDraft();
   }catch(e){ toast('优化失败: '+e.message); }
-  finally{ b.disabled=false; b.textContent='优化提示词'; }
+  finally{ b.disabled=false; b.innerHTML=icon('sparkle')+'优化提示词'; }
 }
 function toggleVersion(){
   if(optState!=='optimized' || lastOptimized==null) return;
@@ -1212,13 +1221,13 @@ async function edOptimize(){
   const cmv=chatModelValue();
   if(!cmv){ toast('请先在「生成」页选好优化用的文本模型'); return; }
   const parts=cmv.split('::'); const cp=parts[0], cm=parts.slice(1).join('::');
-  const b=$('edOptBtn'); const old=b.textContent; b.disabled=true; b.textContent='优化中…';
+  const b=$('edOptBtn'); const old=b.innerHTML; b.disabled=true; b.innerHTML='优化中…';
   try{
     const d=await jpost('/api/optimize',{provider:cp, chat_model:cm, prompt:txt, for_edit:true,
       disable_thinking: $('noThinking')?$('noThinking').checked:true}, 200000);
     if(d.optimized_prompt){ ta.value=d.optimized_prompt; toast('已优化为精准的编辑指令'); }
   }catch(e){ toast('优化失败: '+e.message); }
-  finally{ b.disabled=false; b.textContent=old; }
+  finally{ b.disabled=false; b.innerHTML=old; }
 }
 function edHasSel(){ return ED && (ED.strokes.length>0 || !!ED.rect); }
 function edBuildMask(){
@@ -1295,7 +1304,7 @@ async function edSubmit(){
     edBusyStart('正在重绘');
     edPoll(sub.task_id, btn);
   }catch(e){
-    ED.busy=false; btn.disabled=false; btn.textContent='发送';
+    ED.busy=false; btn.disabled=false; btn.innerHTML=icon('send')+'发送';
     edBusyStop();
     $('edHint').textContent='提交失败: '+e.message;
   }
@@ -1316,24 +1325,24 @@ function edPoll(taskId, btn){
             ED.strokes=[]; ED.rect=null; edLayout(); };
           img.src=imgUrl(im.url)+'?t='+Date.now();
           edBusyStop();
-          ED.busy=false; btn.disabled=false; btn.textContent='发送';
+          ED.busy=false; btn.disabled=false; btn.innerHTML=icon('send')+'发送';
           $('edHint').innerHTML=icon('check')+' 已完成 · 可以继续改这一版（已存入记录）';
           toast('局部编辑完成'); loadHistory();
         } else {
-          edBusyStop(); ED.busy=false; btn.disabled=false; btn.textContent='发送';
+          edBusyStop(); ED.busy=false; btn.disabled=false; btn.innerHTML=icon('send')+'发送';
           $('edHint').textContent='完成，但没有返回图片';
         }
       } else if(st==='failed'){
         clearInterval(iv);
         edBusyStop();
-        ED.busy=false; btn.disabled=false; btn.textContent='发送';
+        ED.busy=false; btn.disabled=false; btn.innerHTML=icon('send')+'发送';
         $('edHint').textContent='失败: '+String(t.error||'未知错误').slice(0,180);
         toast('局部编辑失败');
       }
     }catch(e){
       fails++;
       if(fails>=5){ clearInterval(iv); edBusyStop();
-        if(ED){ ED.busy=false; btn.disabled=false; btn.textContent='发送';
+        if(ED){ ED.busy=false; btn.disabled=false; btn.innerHTML=icon('send')+'发送';
           $('edHint').textContent='轮询中断，请到「记录」里查看结果'; } }
     }
   }, 2500);

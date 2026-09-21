@@ -91,25 +91,50 @@
   const DESCRIBE_P = '你是一个图像分析助手。请使用中文，按照用户指示，结合这些参考图（按第1张、第2张……顺序，与你上传顺序一致），分别说明每一张图在生成中的作用与要点（主体与特征、构图或姿态、场景背景、光影色调、风格与细节等）。请以【图1】【图2】… 分段输出，只输出描述本身，不要多余说明。';
 
   async function chat(body, timeoutMs) {
-    const p = CFG[body.__provider];
+    const prov = body.__provider;
+    const p = CFG[prov];
     const base = (p && p.base_url || '').replace(/\/+$/, '');
-    const key = keyOf(body.__provider);
-    if (!key) throw new Error('请先在设置里填写 ' + body.__provider + ' 的 API Key');
-    const payload = { model: body.__model, messages: body.messages };
-    if (body.temperature != null) payload.temperature = body.temperature;
-    if (body.__thinking !== false) payload.thinking = { type: 'disabled' };
-    let r = await httpJson('POST', base + '/chat/completions',
-      { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, payload, timeoutMs || 300000);
-    if (r.status !== 200 && payload.thinking) {
-      // 接口不认 thinking -> 去掉重试
-      const p2 = Object.assign({}, payload); delete p2.thinking;
-      const r2 = await httpJson('POST', base + '/chat/completions',
-        { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, p2, timeoutMs || 300000);
-      if (r2.status === 200) r = r2;
+    if (!base) throw new Error('服务方「' + prov + '」没有 Base URL，请到设置里检查');
+    let key = keyOf(prov);
+    if (!key) {
+      // 兜底: 同 base_url 的其它提供方有 Key 也能用
+      try {
+        for (const pk of Object.keys(CFG || {})) {
+          if (pk === prov) continue;
+          const pu = String((CFG[pk] || {}).base_url || '').replace(/\/+$/, '');
+          if (pu && pu === base && keyOf(pk)) { key = keyOf(pk); break; }
+        }
+      } catch (e) {}
     }
-    if (r.status !== 200) throw new Error('模型调用失败: ' + errText(r.data));
-    const d = r.data;
-    return ((d.choices || [{}])[0].message || {}).content || '';
+    if (!key) throw new Error('请先在设置里填写「' + prov + '」的 API Key');
+
+    // 逐级降级: 带 thinking+temperature -> 去掉 thinking -> 再去掉 temperature
+    const variants = [];
+    const v1 = { model: body.__model, messages: body.messages };
+    if (body.temperature != null) v1.temperature = body.temperature;
+    if (body.__thinking !== false) v1.thinking = { type: 'disabled' };
+    variants.push(v1);
+    if (v1.thinking) { const v = Object.assign({}, v1); delete v.thinking; variants.push(v); }
+    if (v1.temperature != null) { const v = Object.assign({}, v1); delete v.thinking; delete v.temperature; variants.push(v); }
+
+    let last = null;
+    for (let i = 0; i < variants.length; i++) {
+      const r = await httpJson('POST', base + '/chat/completions',
+        { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, variants[i], timeoutMs || 300000);
+      if (r.status === 200) {
+        const d = r.data || {};
+        const msg = ((d.choices || [{}])[0].message || {});
+        const txt = msg.content || msg.reasoning_content || '';
+        if (txt) return String(txt).trim();
+        throw new Error('模型返回为空（模型=' + body.__model + '）');
+      }
+      last = r;
+      // 只在"参数不被支持"这类错误时才降级重试
+      const t = JSON.stringify(r.data || '').toLowerCase();
+      if (!/thinking|temperature|unsupported|not support|invalid|unknown|unexpected|extra/.test(t)) break;
+    }
+    throw new Error('模型调用失败(HTTP ' + (last && last.status) + '，模型=' + body.__model + '): '
+      + errText(last && last.data));
   }
 
   async function optimize(body) {
