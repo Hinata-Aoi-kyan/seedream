@@ -728,15 +728,13 @@ async function init(){
   if(window.NATIVE_API){
     try{ await window.NATIVE_API.ensureCfg(); }catch(e){}
     try{ await window.NATIVE_API.fileBase(); }catch(e){}
-    // 保证默认提供方存在(首次安装 / 配置为空 / 只有空数组的旧数据)
+    // 保证默认提供方存在(首次安装), 并合并后续新增的默认项(不覆盖用户已有配置)
     try{
-      let c = await jget('/api/config');
-      if(!c || !Object.keys(c).length){
-        const d = await (await fetch('/providers.default.json')).json();
-        await jput('/api/config', d);
-        c = d;
-        toast('已添加默认提供方');
-      }
+      let c = await jget('/api/config') || {};
+      const d = await (await fetch('/providers.default.json')).json();
+      let added = 0;
+      Object.keys(d).forEach(function(k){ if(!c[k]){ c[k] = d[k]; added++; } });
+      if(added){ await jput('/api/config', c); toast('已添加 ' + added + ' 个默认提供方'); }
     }catch(e){}
   }
   dstep('1-before-models');
@@ -1597,6 +1595,20 @@ function renderSettings(skipAnim){
 function firstChar(s){ s=(s||'?'); const t=String(s).trim(); return t[0]?t[0].toUpperCase():'?'; }
 function providerListView(){
   const wrap=document.createElement('div');
+  // APK: 从旧版(Termux 网关)导入
+  if(GW_IS_NATIVE){
+    const im=document.createElement('div'); im.className='sect';
+    im.style.marginTop='0'; im.style.paddingTop='0'; im.style.borderTop='none';
+    im.innerHTML='<h4>从旧版导入</h4>'
+      +'<button class="btn small" id="importBtn" style="width:100%;justify-content:center">'+icon('dl')+'导入旧版配置 / Key / 提示词</button>'
+      +'<div class="small-note">从手机上 Termux 里的旧网关（127.0.0.1:8765）搬过来。需要旧网关正在运行。</div>'
+      +'<div class="small-note" id="importNote"></div>';
+    wrap.appendChild(im);
+    setTimeout(function(){
+      const b=document.getElementById('importBtn');
+      if(b) b.addEventListener('click', function(){ b.disabled=true; importFromGateway().finally(function(){ b.disabled=false; }); });
+    }, 0);
+  }
   // 顶部: 标题"API设置" + "新增提供方"(最右)
   const top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px';
   const h=document.createElement('div'); h.style.cssText='font-size:18px;font-weight:700;color:var(--txt)'; h.textContent='API 设置';
@@ -1641,6 +1653,54 @@ function syncInsets(){
   }catch(e){}
   window.__insets = { top:t, bottom:b };
   return window.__insets;
+}
+
+/* ---------- 从旧版(Termux 网关)导入配置 ---------- */
+// APK 是全新存储, 读不到网页版的数据。若手机上的 Termux 网关还在跑, 可一键搬过来。
+const OLD_GW = 'http://127.0.0.1:8765';
+async function importFromGateway(){
+  const note = document.getElementById('importNote');
+  const set = function(msg, ok){ if(note){ note.innerHTML = (ok!==false?icon('check'):icon('x')) + ' ' + esc(msg); } };
+  set('正在连接旧网关…');
+  const j = async function(url){
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  };
+  try{
+    const cfg = await j(OLD_GW + '/api/config');
+    const prefs = await j(OLD_GW + '/api/prefs').catch(function(){ return {}; });
+    const sett = await j(OLD_GW + '/api/settings').catch(function(){ return { providers:{} }; });
+
+    if(!cfg || !Object.keys(cfg).length) { set('旧网关里没有配置内容'); return; }
+
+    // 1) 配置
+    await jput('/api/config', cfg);
+    // 2) Key(逐个取明文; 旧网关限制仅本机可读 —— App 正是本机)
+    const keys = {};
+    for(const p of Object.keys(cfg)){
+      try{ const r = await j(OLD_GW + '/api/key?provider=' + encodeURIComponent(p)); if(r && r.key) keys[p]=r.key; }catch(e){}
+    }
+    if(Object.keys(keys).length) await jpost('/api/settings', { keys: keys });
+    // 3) 偏好(含优化系统提示词)
+    let prefsN = 0;
+    if(prefs && Object.keys(prefs).length){
+      await jput('/api/prefs', prefs);
+      if(prefs.opt_prompt){
+        // 直接落到前端读取的那把 key 上, 保证立刻生效
+        try{ localStorage.setItem(optStorageKey(), prefs.opt_prompt); prefsN = 1; }catch(e){}
+      }
+    }
+    // 4) 刷新界面
+    try{ MODELS = await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions(); }catch(e){}
+    await loadKeyStatus();
+    try{ $('optPrompt').value = loadOptPrompt(); }catch(e){}
+    renderSettings(true);
+    set('导入完成：' + Object.keys(cfg).length + ' 个提供方 · '
+        + Object.keys(keys).length + ' 个 Key' + (prefsN ? ' · 优化提示词已恢复' : ''));
+  }catch(e){
+    set('导入失败：' + (e && e.message || e) + '（需要手机上 Termux 里的网关正在运行）', false);
+  }
 }
 
 /* ---------- 提供方显示名 / 控制台快捷链接 ---------- */

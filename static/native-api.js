@@ -134,7 +134,28 @@
       if (!/thinking|temperature|unsupported|not support|invalid|unknown|unexpected|extra/.test(t)) break;
     }
     throw new Error('模型调用失败(HTTP ' + (last && last.status) + '，模型=' + body.__model + '): '
-      + errText(last && last.data));
+      + errText(last && last.data)
+      + hint403(last && last.status, base));
+  }
+
+  /** 403 常见误因: 模型/Key 与平台不匹配(BytePlus 国际站 vs 火山方舟国内站) */
+  function hint403(status, base) {
+    if (status !== 403) return '';
+    const isIntl = /bytepluses\.com/i.test(base);
+    const isCn = /volces\.com/i.test(base);
+    let h = '\n\n【403 通常不是 Key 错，而是「该模型没在当前这个平台上开通」】\n';
+    if (isIntl) {
+      h += '当前用的是 BytePlus 国际站(bytepluses.com)。如果模型是在「火山方舟国内站」开的，'
+         + '这里用不了 —— 两个平台的账号、模型、Key 都互不相通。\n'
+         + '· 国内站的模型 → 新建一个提供方，Base URL 填 https://ark.cn-beijing.volces.com/api/v3，';
+    } else if (isCn) {
+      h += '当前用的是火山方舟国内站(volces.com)。如果模型是在 BytePlus 国际站开的，这里用不了。\n'
+         + '· 国际站的模型 → Base URL 填 https://ark.ap-southeast.bytepluses.com/api/v3，';
+    } else {
+      h += '请确认该模型在「这个 Base URL 对应的平台」上已经开通。\n';
+    }
+    h += '并且 Key 也要用对应平台申请的。';
+    return h;
   }
 
   async function optimize(body) {
