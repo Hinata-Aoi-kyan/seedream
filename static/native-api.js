@@ -477,20 +477,42 @@
     const base = (body.base_url || (CFG[body.provider] || {}).base_url || '').replace(/\/+$/, '');
     if (!base) throw new Error('缺少 Base URL');
     const key = pickKey(body);
-    const r = await httpJson('GET', base + '/models', { 'Authorization': 'Bearer ' + key }, null, 60000);
-    if (r.status === 200) {
-      const n = (((r.data || {}).data) || []).length;
-      return { ok: true, status: r.status, message: '连接成功 · Key 有效 · 返回 ' + n + ' 个模型', model_count: n };
+    const lines = [];
+    const fp = key ? (key.slice(0, 6) + '…' + key.slice(-4) + '（长度 ' + key.length + '）') : '(无)';
+    lines.push('Base URL: ' + base);
+    lines.push('Key 指纹: ' + fp);
+
+    // ① 列模型
+    let r1 = await httpJson('GET', base + '/models', { 'Authorization': 'Bearer ' + key }, null, 60000);
+    if (r1.status === 200) {
+      const n = (((r1.data || {}).data) || []).length;
+      lines.push('① 列模型: HTTP 200 · ' + n + ' 个 ✅');
+    } else {
+      lines.push('① 列模型: HTTP ' + r1.status + ' · ' + errText(r1.data));
     }
-    if (body.model) {
-      try {
-        const r2 = await httpJson('POST', base + '/chat/completions',
-          { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-          { model: body.model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }, 60000);
-        if (r2.status === 200) return { ok: true, status: r.status, message: '该接口未开放列模型(HTTP ' + r.status + ')，但模型可调用 · Key 有效', model_count: 0 };
-      } catch (e) {}
+
+    // ② 对话测试(用该服务方第一个对话模型)
+    const cm = body.model || (((CFG[body.provider] || {}).chat_models || [])[0] || {}).id;
+    let chatOk = false;
+    if (cm) {
+      lines.push('② 对话模型: ' + cm);
+      const payload = { model: cm, messages: [{ role: 'user', content: 'hi' }] };
+      const r2 = await httpJson('POST', base + '/chat/completions',
+        { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, payload, 60000);
+      if (r2.status === 200) {
+        chatOk = true;
+        lines.push('   结果: HTTP 200 · 可调用 ✅');
+      } else {
+        lines.push('   结果: HTTP ' + r2.status + ' · ' + errText(r2.data).slice(0, 200));
+        lines.push('   请求体: ' + JSON.stringify(payload));
+        lines.push('   请求头: Authorization: Bearer ' + fp + ' / Content-Type: application/json');
+      }
+    } else {
+      lines.push('② 对话模型: (该服务方未配置文本模型)');
     }
-    return { ok: false, status: r.status, message: '连接异常(HTTP ' + r.status + ')，请检查 Base URL / Key：' + errText(r.data) };
+
+    const ok = r1.status === 200 && (!cm || chatOk);
+    return { ok: ok, status: r1.status, message: lines.join('\n'), model_count: 0 };
   }
   async function netdiag(body) {
     const out = [], mb = Math.max(1, Math.min(20, (body && body.mb) || 5));

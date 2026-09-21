@@ -2102,7 +2102,7 @@ async function diagnose(key){
   html+=_secTitle('① 接口与 Key');
   try{
     var r=await jpost('/api/test',{provider:key,base_url:base,api_key:api||undefined,model:model||undefined});
-    html+=_chkRow(!!r.ok, '接口连通 / Key 有效', r.message);
+    html+=_chkRow(!!r.ok, '接口连通 / Key 有效', String(r.message||'').replace(/\n/g,'<br>'));
   }catch(e){
     html+=_chkRow(false, '接口连通 / Key 有效', e.message);
   }
