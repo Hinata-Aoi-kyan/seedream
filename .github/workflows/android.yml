@@ -1,7 +1,7 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:          # 可手动触发
+  workflow_dispatch:
   push:
     paths:
       - 'index.html'
@@ -14,7 +14,10 @@ on:
       - '.github/workflows/android.yml'
 
 permissions:
-  contents: write             # 需要: 失败时回写日志 / 成功时发布 Release
+  contents: write             # 失败回写日志 / 成功发 Release
+
+env:
+  LOG: /tmp/build.log
 
 jobs:
   build:
@@ -22,8 +25,6 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 安装 Node 20
         uses: actions/setup-node@v4
@@ -36,46 +37,59 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 准备 Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: 接受 SDK 许可 + 预装组件
+      # runner 镜像已预装 Android SDK，不用 setup-android(它的 sdkmanager "tools" 会失败)
+      - name: 检查环境
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager --install "platform-tools" >/dev/null 2>&1 || true
-          sdkmanager --install "platforms;android-35" >/dev/null 2>&1 || true
-          sdkmanager --install "build-tools;35.0.0" >/dev/null 2>&1 || true
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
-          ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
+          set -o pipefail
+          {
+            echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+            echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+            SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+            echo "--- 已装 platforms ---"; ls "$SDK/platforms" 2>/dev/null || true
+            echo "--- 已装 build-tools ---"; ls "$SDK/build-tools" 2>/dev/null || true
+            echo "--- java ---"; java -version 2>&1 | head -3
+          } 2>&1 | tee -a "$LOG" >&2
 
       - name: 安装依赖
         run: |
-          npm install --no-audit --no-fund \
-            @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest \
-            @capacitor/filesystem@latest @capacitor/local-notifications@latest @capacitor/app@latest
-          npx cap --version
+          set -o pipefail
+          {
+            npm install --no-audit --no-fund \
+              @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest \
+              @capacitor/filesystem@latest @capacitor/local-notifications@latest @capacitor/app@latest
+            echo "--- 版本 ---"
+            npx cap --version
+            node -e "const p=require('./node_modules/@capacitor/android/package.json');console.log('android:',p.version)"
+          } 2>&1 | tee -a "$LOG" >&2
 
       - name: 收集网页文件到 www/
-        run: node scripts/prepare-www.mjs
+        run: |
+          set -o pipefail
+          node scripts/prepare-www.mjs 2>&1 | tee -a "$LOG" >&2
 
       - name: 生成 Android 工程
-        run: npx cap add android
+        run: |
+          set -o pipefail
+          npx cap add android 2>&1 | tee -a "$LOG" >&2
 
       - name: 打补丁(权限/明文/应用名)
-        run: node scripts/patch-android.mjs
+        run: |
+          set -o pipefail
+          node scripts/patch-android.mjs 2>&1 | tee -a "$LOG" >&2
 
       - name: 同步 web 资源
-        run: npx cap sync android
+        run: |
+          set -o pipefail
+          npx cap sync android 2>&1 | tee -a "$LOG" >&2
 
       - name: 编译 Debug APK
         working-directory: android
         run: |
           set -o pipefail
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build.log
+          { ./gradlew assembleDebug --no-daemon --stacktrace; } 2>&1 | tee -a /tmp/build.log
 
-      # ---------- 成功: 发布 Release (稳定下载链接) ----------
+      # ---------- 成功: 发布 Release ----------
       - name: 发布 Release
         if: success()
         uses: softprops/action-gh-release@v2
@@ -89,19 +103,18 @@ jobs:
           files: android/app/build/outputs/apk/debug/app-debug.apk
           fail_on_unmatched_files: true
 
-      # ---------- 失败: 把日志写回仓库, 便于外部排查 ----------
+      # ---------- 失败: 回写日志 ----------
       - name: 回写失败日志
         if: failure()
         run: |
           python3 - <<'PY'
           import json, os
           tail = ""
-          for p in ("/tmp/build.log",):
-              try:
-                  with open(p, "rb") as f:
-                      tail = f.read()[-8000:].decode("utf-8", "replace")
-              except Exception as e:
-                  tail += "\n[%s] %s" % (p, e)
+          try:
+              with open("/tmp/build.log", "rb") as f:
+                  tail = f.read()[-9000:].decode("utf-8", "replace")
+          except Exception as e:
+              tail = "无法读取日志: %s" % e
           data = {
               "status": "failure",
               "sha": os.environ.get("GITHUB_SHA", ""),
@@ -113,17 +126,10 @@ jobs:
           os.makedirs(".ci", exist_ok=True)
           with open(".ci/status.json", "w") as f:
               json.dump(data, f, ensure_ascii=False, indent=2)
-          print("已写入 .ci/status.json")
+          print("已写入 .ci/status.json, 日志 %d 字符" % len(tail))
           PY
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f .ci/status.json
           git commit -m "ci: build failure [skip ci]" || true
           git push || true
-
-      - name: 失败时控制台诊断
-        if: failure()
-        run: |
-          echo "=== java ==="; java -version || true
-          echo "=== manifest ==="; cat android/app/src/main/AndroidManifest.xml || true
-          echo "=== 日志尾部 ==="; tail -60 /tmp/build.log || true
