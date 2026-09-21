@@ -7,10 +7,12 @@
 (function () {
   'use strict';
 
-  const Cap = window.Capacitor || null;
-  function PL(name) { try { return (Cap && Cap.Plugins && Cap.Plugins[name]) || null; } catch (e) { return null; } }
-  function isNative() { try { return !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform()); } catch (e) { return false; } }
-  if (!isNative()) { window.NATIVE_API = null; return; }
+  // 注意: Capacitor 的桥接脚本可能在我们的脚本之后注入,
+  // 因此绝不能在这里取 window.Capacitor —— 全部延迟到调用时判断。
+  function cap() { try { return window.Capacitor || null; } catch (e) { return null; } }
+  function PL(name) { try { const c = cap(); return (c && c.Plugins && c.Plugins[name]) || null; } catch (e) { return null; } }
+  function isNative() { try { const c = cap(); return !!(c && c.isNativePlatform && c.isNativePlatform()); } catch (e) { return false; } }
+  function convertFileSrc(p) { try { const c = cap(); return c && c.convertFileSrc ? c.convertFileSrc(p) : p; } catch (e) { return p; } }
 
   // ---------- 简易存储 ----------
   const SK = {
@@ -37,9 +39,9 @@
   function keyOf(p) { return K()[p] || ''; }
 
   // ---------- HTTP (CapacitorHttp 原生请求, 不受 CORS 限制) ----------
-  const CH = PL('CapacitorHttp');
   async function http(method, url, headers, data, timeoutMs) {
     const to = timeoutMs || 300000;
+    const CH = PL('CapacitorHttp');
     if (CH) {
       const res = await CH.request({
         method: method, url: url, headers: headers || {},
@@ -211,8 +213,6 @@
   }
 
   // ---------- 存图 ----------
-  const FS = PL('Filesystem');
-  const MEDIA = PL('Media');
   const DIR = 'DOCUMENTS';
   let FILE_BASE = (function () { try { return localStorage.getItem('sw_n_filebase') || null; } catch (e) { return null; } })();
   async function fileBase() {
@@ -273,9 +273,10 @@
       if (!blob) continue;
       const fn = gid + '_' + i + '.png';
       const b64 = await blobToB64(blob);
-      await FS.writeFile({ path: fn, data: b64, directory: DIR, recursive: true });
+      await PL('Filesystem').writeFile({ path: fn, data: b64, directory: DIR, recursive: true });
       try {
-        if (MEDIA && MEDIA.savePhoto) await MEDIA.savePhoto({ path: await FS.getUri({ path: fn, directory: DIR }).then(function (u) { return u.uri; }) });
+        const FSx = PL('Filesystem'), MEDIA = PL('Media');
+        if (MEDIA && MEDIA.savePhoto) await MEDIA.savePhoto({ path: await FSx.getUri({ path: fn, directory: DIR }).then(function (u) { return u.uri; }) });
       } catch (e) { /* 相册失败不影响主流程 */ }
       const wh = await blobDims(blob);
       saved.push({ file: fn, mb: Math.round(blob.size / 1024 / 1024 * 100) / 100, w: wh[0], h: wh[1] });
@@ -289,7 +290,7 @@
   function imgSrcOf(fn) {
     if (!FILE_BASE) return '';
     const abs = FILE_BASE + '/' + fn;
-    try { return Cap.convertFileSrc ? Cap.convertFileSrc(abs) : abs; } catch (e) { return abs; }
+    return convertFileSrc(abs);
   }
 
   // ---------- 生成主流程 ----------
@@ -349,8 +350,8 @@
     let imgData = body.image || '';
     if (imgData.indexOf('/img/') === 0) {
       const fn = imgData.slice(5);
-      const u = await FS.getUri({ path: fn, directory: DIR });
-      const r = await fetch(Cap.convertFileSrc(u.uri)); const b = await r.blob();
+      const u = await PL('Filesystem').getUri({ path: fn, directory: DIR });
+      const r = await fetch(convertFileSrc(u.uri)); const b = await r.blob();
       imgData = 'data:image/png;base64,' + (await blobToB64(b));
     }
     const base = (p.base_url || '').replace(/\/+$/, '');
@@ -525,6 +526,7 @@
 
   // ---------- 路由 ----------
   async function handle(method, path, body) {
+    if (!isNative()) return undefined;   // 网页版不接管
     const P = String(path || '').split('?')[0];
     const qs = {};
     String(path || '').split('?')[1] && String(path).split('?')[1].split('&').forEach(function (kv) {
