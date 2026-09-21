@@ -78,7 +78,7 @@ jobs:
             npm install --no-audit --no-fund \
               @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest \
               @capacitor/filesystem@latest @capacitor/local-notifications@latest @capacitor/app@latest \
-              @capacitor-community/media@latest
+              @capacitor-community/media@latest @capacitor/status-bar@latest @capacitor/browser@latest
             npx cap --version
           } 2>&1 | tee -a "$LOG" >&2
 

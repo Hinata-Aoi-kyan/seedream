@@ -493,6 +493,11 @@ function applyTheme(){
   }
   const mt = document.querySelector('meta[name="theme-color"]');
   if(mt) mt.setAttribute('content', t==='dark' ? '#0f1115' : '#f4f5f8');
+  // APK: 同步系统状态栏图标颜色(深色背景配浅色文字)
+  try{
+    const sb = plugin('StatusBar');
+    if(sb && sb.setStyle) sb.setStyle({ style: (t==='dark' ? 'DARK' : 'LIGHT') });
+  }catch(e){}
 }
 function setThemeMode(m){
   THEME_MODE = m;
@@ -702,6 +707,12 @@ async function init(){
   await waitForBridge(2000);          // 等 Capacitor 桥接注入(否则原生能力全失效)
   GW_IS_NATIVE = isNative();
   dstep('0b-native='+GW_IS_NATIVE);
+  // APK: 不让网页画到状态栏底下(Android WebView 的 env(safe-area-inset) 不可靠)
+  try{
+    const sb = plugin('StatusBar');
+    if(sb && sb.setOverlaysWebView){ await sb.setOverlaysWebView({ overlay:false }); }
+    if(sb && sb.setBackgroundColor){ try{ await sb.setBackgroundColor({ color:'#0f1115' }); }catch(e){} }
+  }catch(e){ console.warn('statusbar', e); }
   applyTheme(); requestNotif(); fillDataIcons();
   if(window.NATIVE_API){
     try{ await window.NATIVE_API.ensureCfg(); }catch(e){}
@@ -1607,13 +1618,14 @@ function provConsoleUrl(key){
 function openConsole(key){
   const url = provConsoleUrl(key);
   if (!url) { toast('该服务方未配置控制台链接'); return; }
+  // APK: 用 Browser 插件在系统浏览器打开; 网页版新开标签
   try {
-    const c = cap();
-    if (c && c.Plugins && c.Plugins.Browser && c.Plugins.Browser.open) {
-      c.Plugins.Browser.open({ url: url }); return;
-    }
+    const b = plugin('Browser');
+    if (b && b.open) { b.open({ url: url }); return; }
   } catch (e) {}
-  window.open(url, '_blank');
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); setTimeout(function(){ a.remove(); }, 400);
 }
 function consoleLink(key){
   const url = provConsoleUrl(key);
