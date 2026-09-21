@@ -692,7 +692,7 @@ function switchTab(name, fromNav){
   document.querySelectorAll('.tabbar .tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
   // 离开设置页时收起二级编辑页
   if(name !== 'settings' && settingsView === 'edit'){ settingsView='list'; editingProvider=null; }
-  if(name==='settings') renderSettings();
+  if(name==='settings'){ loadKeyStatus().then(function(){ renderSettings(true); }); renderSettings(); }
   if(name==='history') loadHistory();
   if(name==='generate'){ buildChatOptions(); }
   // 恢复目标页滚动(首次进入=顶)
@@ -1607,8 +1607,10 @@ function providerListView(){
   try{ const m=document.querySelector('meta[name="build-stamp"]'); stamp=m?m.getAttribute('content'):''; }catch(e){}
   const nat = (typeof window!=='undefined' && window.NATIVE_API) ? (window.NATIVE_API.isNative() ? '原生=是' : '原生=否') : '原生=无模块';
   const ins = (function(){ try{ return syncInsets(); }catch(e){ return {top:'err',bottom:'err'}; } })();
+  const nk = (function(){ try{ return Object.keys(HAS_KEY||{}).filter(function(k){ return HAS_KEY[k]; }).length; }catch(e){ return '?'; } })();
   bs.textContent = (stamp ? ('构建 '+stamp) : '开发版(未标记)') + ' · ' + nat
-    + ' · 状态栏 ' + ins.top + ' / 底部 ' + ins.bottom;
+    + ' · 状态栏 ' + ins.top + ' / 底部 ' + ins.bottom
+    + ' · 已存Key ' + nk + ' 个';
   wrap.appendChild(bs);
   return wrap;
 }
@@ -1711,7 +1713,7 @@ function providerEditor(key){
   back.innerHTML='<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>';
   back.onclick=()=>{ navBack(); };
   const save=document.createElement('button'); save.className='btn primary'; save.innerHTML=icon('check')+'保存';
-  save.onclick=()=>saveProvider(key);
+  save.onclick=function(){ saveProvider(key).catch(function(e){ toast('保存异常: '+(e&&e.message||e)); }); };
   bar.appendChild(back); bar.appendChild(save);
   wrap.appendChild(bar);
   const sp=document.createElement('div'); sp.className='editbar-spacer'; wrap.appendChild(sp);
@@ -2049,23 +2051,43 @@ async function diagnose(key){
   toolSet(key, html);
 }
 async function saveProvider(key){
-  CONFIG[key].label=document.getElementById('plabel_'+key).value.trim()||key;
-  CONFIG[key].base_url=document.getElementById('pbase_'+key).value.trim();
-  CONFIG[key].image_models=readList(key,'image_models');
-  CONFIG[key].chat_models=readList(key,'chat_models');
-  // 只在「用户编辑过」时才提交 Key; 掩码/原文状态一律不动已存的值
-  const inp=document.getElementById('pkey_'+key);
-  let v = keyState(key)==='edit' ? ((inp&&inp.value)||'').trim() : '';
-  v = v || (keyDraft[key]||'').trim();
-  if(v) keyDraft[key]=v;
   try{
-    await jput('/api/config',CONFIG);
+    const g = function(id){ const el=document.getElementById(id); return el ? el : null; };
+    if(!CONFIG[key]) throw new Error('提供方不存在: '+key);
+    const labEl=g('plabel_'+key), baseEl=g('pbase_'+key);
+    if(labEl) CONFIG[key].label = labEl.value.trim() || (CONFIG[key].label || '');
+    if(baseEl) CONFIG[key].base_url = baseEl.value.trim();
+    CONFIG[key].image_models = readList(key,'image_models');
+    CONFIG[key].chat_models  = readList(key,'chat_models');
+
+    // 取要提交的 Key: 只看值, 不依赖 state; 掩码(一串•)不算
+    const inp = g('pkey_'+key);
+    let v = inp ? String(inp.value || '').trim() : '';
+    if(v && /^[•\u2022]+$/.test(v)) v = '';                 // 全是黑点 = 掩码
+    v = v || String(keyDraft[key] || '').trim();
+
+    await jput('/api/config', CONFIG);
+    let keyMsg = '';
     if(v){
-      await jpost('/api/settings',{keys:{[key]:v}});
-      HAS_KEY[key]=true; resetKeyField(key);            // 存完立刻变回黑点
+      await jpost('/api/settings', { keys: (function(){ const o={}; o[key]=v; return o; })() });
+      HAS_KEY[key] = true;
+      delete keyDraft[key]; KEY_CACHE = {};
+      if(inp){ inp.type='password'; inp.value=KEY_MASK; inp.dataset.masked='1'; inp.dataset.state='masked'; }
+      _setEye(key, false);
+      keyMsg = ' · Key 已保存';
+    } else if(HAS_KEY[key]){
+      keyMsg = ' · Key 未改动';
+    } else {
+      keyMsg = ' · 未填 Key';
     }
-    toast('已保存'); MODELS=await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions();
-  }catch(e){ toast('保存失败: '+e.message); } }
+    MODELS = await jget('/api/models');
+    fillProviders(); onProviderChange(); buildChatOptions();
+    toast('已保存' + keyMsg);
+  }catch(e){
+    toast('保存失败: ' + (e && e.message || e));
+    console.error('saveProvider', e);
+  }
+}
 function readList(key,type){ const box = type==='image_models'?document.getElementById('imglist_'+key):document.getElementById('chatlist_'+key);
   if(!box) return []; const rows=box.querySelectorAll('.mrow'); const out=[];
   rows.forEach(r=>{ const id=r.querySelector('[data-id]').value.trim(); const lb=r.querySelector('[data-label]').value.trim(); if(id) out.push({id,label:lb||id}); });

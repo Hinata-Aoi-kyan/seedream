@@ -402,12 +402,25 @@
   // ---------- 其他端点 ----------
   /** 取 API Key: 显式传入优先, 否则用已保存的; 都没有就给详细报错, 便于定位 */
   function pickKey(body) {
+    const prov = (body && body.provider) || '';
     const explicit = (body && body.api_key || '').trim();
-    const saved = keyOf(body && body.provider);
     if (explicit) return explicit;
+    const saved = keyOf(prov);
     if (saved) return saved;
+    // 兜底: 同 base_url 的其它 provider 上有 Key 也能用(常见于"新增提供方"重复配置)
+    try {
+      const url = String(body && body.base_url || '').replace(/\/+$/, '');
+      const all = K();
+      if (url) {
+        for (const pk of Object.keys(CFG || {})) {
+          if (pk === prov) continue;
+          const pu = String((CFG[pk] || {}).base_url || '').replace(/\/+$/, '');
+          if (pu && pu === url && all[pk]) return all[pk];
+        }
+      }
+    } catch (e) {}
     const have = Object.keys(K());
-    throw new Error('未找到「' + (body && body.provider) + '」的 API Key'
+    throw new Error('未找到「' + prov + '」的 API Key'
       + (have.length ? '（已保存的：' + have.join('、') + '）' : '（还没保存过任何 Key —— 请先填好 Key 再点「保存」）'));
   }
 
