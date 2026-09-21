@@ -16,3 +16,6 @@ www/
 android/
 ios/
 package-lock.json
+
+# CI 状态回写文件(由工作流生成)
+.ci/
