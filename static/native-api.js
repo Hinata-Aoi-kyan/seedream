@@ -400,12 +400,22 @@
   }
 
   // ---------- 其他端点 ----------
+  /** 取 API Key: 显式传入优先, 否则用已保存的; 都没有就给详细报错, 便于定位 */
+  function pickKey(body) {
+    const explicit = (body && body.api_key || '').trim();
+    const saved = keyOf(body && body.provider);
+    if (explicit) return explicit;
+    if (saved) return saved;
+    const have = Object.keys(K());
+    throw new Error('未找到「' + (body && body.provider) + '」的 API Key'
+      + (have.length ? '（已保存的：' + have.join('、') + '）' : '（还没保存过任何 Key —— 请先填好 Key 再点「保存」）'));
+  }
+
   async function detect(body) {
     await ensureCfg();
     const base = (body.base_url || (CFG[body.provider] || {}).base_url || '').replace(/\/+$/, '');
-    const key = body.api_key || keyOf(body.provider);
     if (!base) throw new Error('缺少 Base URL');
-    if (!key) throw new Error('需要该服务方的 API Key');
+    const key = pickKey(body);
     const r = await httpJson('GET', base + '/models', { 'Authorization': 'Bearer ' + key }, null, 60000);
     if (r.status !== 200) {
       return { models: [], unsupported: true, message: '未能列出模型(HTTP ' + r.status + ')：' + errText(r.data) + '。该接口可能未开放列模型；生图 Key 若可用，请点「诊断」验证，或点「手动」添加模型。' };
@@ -416,9 +426,8 @@
   async function testConn(body) {
     await ensureCfg();
     const base = (body.base_url || (CFG[body.provider] || {}).base_url || '').replace(/\/+$/, '');
-    const key = body.api_key || keyOf(body.provider);
     if (!base) throw new Error('缺少 Base URL');
-    if (!key) throw new Error('需要该服务方的 API Key');
+    const key = pickKey(body);
     const r = await httpJson('GET', base + '/models', { 'Authorization': 'Bearer ' + key }, null, 60000);
     if (r.status === 200) {
       const n = (((r.data || {}).data) || []).length;
