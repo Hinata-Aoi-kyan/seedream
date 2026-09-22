@@ -2083,8 +2083,14 @@ function _chkRow(ok, name, detail, ms){
     +'<span style="flex:none;display:inline-flex;color:'+(ok?'var(--acc2)':'var(--bad)')+'">'+icon(ok?'check':'x')+'</span>'
     +'<span style="flex:1;font-size:13px">'+esc(name)+'</span>'
     +(ms!=null?'<small style="flex:none;color:var(--mut)">'+ms+'ms</small>':'')+'</div>';
-  if(detail) s+='<div class="small-note" style="margin:0 0 6px 22px;font-size:12px">'+esc(String(detail))+'</div>';
+  if(detail) s+='<div class="small-note" style="margin:0 0 6px 22px;font-size:12px">'+_escMulti(detail)+'</div>';
   return s;
+}
+// 多行详情: 先转义, 再把换行/\n/<br> 统一成真的换行标签(不做 html 注入)
+function _escMulti(t){
+  var x = esc(String(t));
+  x = x.replace(/(&lt;br&gt;|\\n|\r?\n)/g, '<br>');
+  return x;
 }
 function _secTitle(t){ return '<div style="font-size:12px;color:var(--mut);margin:10px 0 2px;font-weight:600">'+esc(t)+'</div>'; }
 
