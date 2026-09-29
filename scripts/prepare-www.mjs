@@ -33,7 +33,7 @@ for (const d of DIRS) {
 const version = process.env.BUILD_VERSION || 'dev';
 const sha = (process.env.GITHUB_SHA || 'local').slice(0, 7);
 const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
-const stamp = `v${version} · ${sha} · ${when}`;
+const stamp = `v1.1.${version} · ${sha} · ${when}`;
 const idx = path.join(WWW, 'index.html');
 let html = fs.readFileSync(idx, 'utf8');
 const META_RE = /<meta\s+name="build-stamp"[^>]*>\s*/i;

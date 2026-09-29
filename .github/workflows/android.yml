@@ -97,7 +97,8 @@ jobs:
       - name: 打补丁(权限/明文/应用名/版本号/签名)
         env:
           BUILD_VERSION: ${{ github.run_number }}
-          BUILD_CODE: ${{ github.run_number }}
+          # versionCode 加 10000 基数: 必须大于本地调试构建的 9000 段, 否则无法覆盖安装
+          BUILD_CODE: ${{ github.run_number + 10000 }}
         run: |
           set -o pipefail
           node scripts/patch-android.mjs 2>&1 | tee -a "$LOG" >&2
@@ -138,7 +139,7 @@ jobs:
             echo '--- 重签后证书(固定密钥) ---'
             "${BT}apksigner" verify --print-certs /tmp/signed.apk 2>&1 | grep -i "SHA-256" || true
 
-            OUT="Seedream-1.0.${{ github.run_number }}.apk"
+            OUT="Seedream-1.1.${{ github.run_number }}.apk"
             cp /tmp/signed.apk "/tmp/$OUT"
             echo "file=/tmp/$OUT" >> "$GITHUB_OUTPUT"
             echo "name=$OUT" >> "$GITHUB_OUTPUT"
@@ -151,10 +152,10 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "Seedream v1.0.${{ github.run_number }}"
+          tag_name: v1.1.${{ github.run_number }}
+          name: "Seedream v1.1.${{ github.run_number }}"
           body: |
-            **版本** v1.0.${{ github.run_number }}
+            **版本** v1.1.${{ github.run_number }}（versionCode ${{ github.run_number + 10000 }}，可覆盖安装 1.0.9000 本地调试版）
             - 提交: `${{ github.sha }}`
             - 构建时间: ${{ github.event.head_commit.timestamp }}
             - 签名: 固定密钥（可直接覆盖安装，无需卸载）

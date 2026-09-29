@@ -22,7 +22,7 @@ cd seedream
 ```
 https://github.com/Hinata-Aoi-kyan/seedream/releases/latest
 ```
-产物名形如 `Seedream-1.0.<构建号>.apk`，约 5 MB，debug 签名（固定密钥，可覆盖安装）。
+产物名形如 `Seedream-1.1.<构建号>.apk`（versionCode=10000+构建号，高于本地调试段 9000，可覆盖安装），约 5 MB，debug 签名（固定密钥，可覆盖安装）。
 
 ---
 

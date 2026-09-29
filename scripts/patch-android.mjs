@@ -62,9 +62,10 @@ if (fs.existsSync(GRADLE)) {
   const ver = process.env.BUILD_VERSION || '0';
   const code = process.env.BUILD_CODE || ver.replace(/\D/g, '') || '1';
 
-  // 版本号
+  // 版本号: 1.1.x 系列; versionCode 用 10000+构建号(CI) —— 必须大于本地调试构建的 9000 段,
+  // 否则用户手机上装过本地包(如 versionCode 9000)后无法覆盖安装 CI 包(Android 禁止降级)
   g = g.replace(/versionCode\s+\d+/, `versionCode ${code}`);
-  g = g.replace(/versionName\s+"[^"]*"/, `versionName "1.0.${ver}"`);
+  g = g.replace(/versionName\s+"[^"]*"/, `versionName "1.1.${ver}"`);
 
   // 覆盖 debug 签名配置 -> 用仓库里固定的密钥(保证每次构建签名一致, 可覆盖安装)
   const ks = '../../signing/seedream.jks';
@@ -104,7 +105,7 @@ if (fs.existsSync(GRADLE)) {
 
   if (g !== before2) {
     fs.writeFileSync(GRADLE, g);
-    console.log(`[patch] build.gradle 已更新 (versionCode=${code}, versionName=1.0.${ver})`);
+    console.log(`[patch] build.gradle 已更新 (versionCode=${code}, versionName=1.1.${ver})`);
   } else {
     console.log('[patch] build.gradle 无需改动');
   }
