@@ -716,6 +716,7 @@ async function jreq(m,u,b,timeout){
   finally{ clearTimeout(timer); } }
 
 let MODELS={}, CONFIG={}, refs=[], currentHistory=[];
+let DEFAULT_KEYS=[];   // 内置默认提供方(随包 providers.default.json), 控制台快捷入口只对这些显示
 let _det={}; let keyDraft={};
 
 /* ---- 草稿缓存 ---- */
@@ -750,9 +751,14 @@ window.addEventListener('popstate', function(){
 });
 
 function switchTab(name, fromNav){
-  // 点「生成」tab 回主页: 交给返回栈处理, 保证状态一致
-  if(fromNav !== true && name === 'generate' && CUR_TAB !== 'generate' && _navDepth > 0){
-    navBack(); return;
+  // 用户明确点了目标 tab: 直接关掉所有二级视图/覆盖层并清空返回栈(不再逐级返回)
+  if(fromNav !== true && name !== CUR_TAB){
+    var ov=document.getElementById('editor'); if(ov) closeImageEditor(true);
+    var lb=document.getElementById('lightbox'); if(lb) closeLightbox(true);
+    var vw=document.getElementById('viewer'); if(vw) closeViewer(true);
+    var mn=document.querySelector('.provmenu'); if(mn) closeProvMenu(true);
+    if(settingsView==='edit'){ settingsView='list'; editingProvider=null; }
+    if(_navDepth>0){ var n=_navDepth; for(var i=0;i<n;i++) navConsume(); }   // 静默消费历史状态
   }
   var prev = CUR_TAB;
   var app=document.querySelector('.app');
@@ -795,6 +801,7 @@ async function init(){
   setTimeout(syncInsets, 300);   // 布局稳定后再同步一次
   window.addEventListener('resize', syncInsets);
   applyTheme(); requestNotif(); fillDataIcons();
+  try{ const d = await (await fetch('/providers.default.json')).json(); DEFAULT_KEYS = Object.keys(d||{}); }catch(e){}
   if(window.NATIVE_API){
     try{ await window.NATIVE_API.ensureCfg(); }catch(e){}
     try{ await window.NATIVE_API.fileBase(); }catch(e){}
@@ -1468,8 +1475,7 @@ async function histSelDelete(){
   var ids=Array.from(histSel); if(!ids.length){ toast('未选择'); return; }
   if(!confirm('确定删除选中的 '+ids.length+' 条记录？')) return;
   try{
-    var r=await fetch(gwUrl('/api/history/batch'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})});
-    var j=await r.json();
+    var j=await jpost('/api/history/batch',{ids:ids});
     toast('已删除 '+(j.deleted||ids.length)+' 条');
     histSel.clear(); histSelMode=false;
     var btn=document.getElementById('histSelectBtn'); if(btn) btn.innerHTML=icon('checks')+'多选';
@@ -1512,7 +1518,7 @@ function renderHistory(){
     const small=document.createElement('small'); const dt=new Date(h.ts*1000);
     small.textContent=(dt.getMonth()+1).toString().padStart(2,'0')+'-'+dt.getDate().toString().padStart(2,'0')+' '+dt.getHours().toString().padStart(2,'0')+':'+dt.getMinutes().toString().padStart(2,'0');
     const del=document.createElement('button'); del.className='btn ghost'; del.innerHTML=icon('trash');
-    del.onclick=async e=>{ e.stopPropagation(); if(!confirm('确定删除这条生成记录？')) return; await fetch(gwUrl('/api/history/'+h.id),{method:'DELETE'}); loadHistory(); };
+    del.onclick=async e=>{ e.stopPropagation(); if(!confirm('确定删除这条生成记录？')) return; try{ await jreq('DELETE','/api/history/'+h.id); }catch(e2){ toast('删除失败'); return; } loadHistory(); };
     meta.append(s,small,del); d.appendChild(meta); d.onclick=()=>openViewer(h); box.appendChild(d); }); }
 function hMeta(h){
   const items=[['模型',h.model],['尺寸',h.size],
@@ -1666,20 +1672,6 @@ function renderSettings(skipAnim){
 function firstChar(s){ s=(s||'?'); const t=String(s).trim(); return t[0]?t[0].toUpperCase():'?'; }
 function providerListView(){
   const wrap=document.createElement('div');
-  // APK: 从旧版(Termux 网关)导入
-  if(GW_IS_NATIVE){
-    const im=document.createElement('div'); im.className='sect';
-    im.style.marginTop='0'; im.style.paddingTop='0'; im.style.borderTop='none';
-    im.innerHTML='<h4>从旧版导入</h4>'
-      +'<button class="btn small" id="importBtn" style="width:100%;justify-content:center">'+icon('dl')+'导入旧版配置 / Key / 提示词</button>'
-      +'<div class="small-note">从手机上 Termux 里的旧网关（127.0.0.1:8765）搬过来。需要旧网关正在运行。</div>'
-      +'<div class="small-note" id="importNote"></div>';
-    wrap.appendChild(im);
-    setTimeout(function(){
-      const b=document.getElementById('importBtn');
-      if(b) b.addEventListener('click', function(){ b.disabled=true; importFromGateway().finally(function(){ b.disabled=false; }); });
-    }, 0);
-  }
   // 顶部: 标题"API设置" + "新增提供方"(最右)
   const top=document.createElement('div'); top.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px';
   const h=document.createElement('div'); h.style.cssText='font-size:18px;font-weight:700;color:var(--txt)'; h.textContent='API 设置';
@@ -1726,53 +1718,6 @@ function syncInsets(){
   return window.__insets;
 }
 
-/* ---------- 从旧版(Termux 网关)导入配置 ---------- */
-// APK 是全新存储, 读不到网页版的数据。若手机上的 Termux 网关还在跑, 可一键搬过来。
-const OLD_GW = 'http://127.0.0.1:8765';
-async function importFromGateway(){
-  const note = document.getElementById('importNote');
-  const set = function(msg, ok){ if(note){ note.innerHTML = (ok!==false?icon('check'):icon('x')) + ' ' + esc(msg); } };
-  set('正在连接旧网关…');
-  const j = async function(url){
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
-  };
-  try{
-    const cfg = await j(OLD_GW + '/api/config');
-    const prefs = await j(OLD_GW + '/api/prefs').catch(function(){ return {}; });
-    const sett = await j(OLD_GW + '/api/settings').catch(function(){ return { providers:{} }; });
-
-    if(!cfg || !Object.keys(cfg).length) { set('旧网关里没有配置内容'); return; }
-
-    // 1) 配置
-    await jput('/api/config', cfg);
-    // 2) Key(逐个取明文; 旧网关限制仅本机可读 —— App 正是本机)
-    const keys = {};
-    for(const p of Object.keys(cfg)){
-      try{ const r = await j(OLD_GW + '/api/key?provider=' + encodeURIComponent(p)); if(r && r.key) keys[p]=r.key; }catch(e){}
-    }
-    if(Object.keys(keys).length) await jpost('/api/settings', { keys: keys });
-    // 3) 偏好(含优化系统提示词)
-    let prefsN = 0;
-    if(prefs && Object.keys(prefs).length){
-      await jput('/api/prefs', prefs);
-      if(prefs.opt_prompt){
-        // 直接落到前端读取的那把 key 上, 保证立刻生效
-        try{ localStorage.setItem(optStorageKey(), prefs.opt_prompt); prefsN = 1; }catch(e){}
-      }
-    }
-    // 4) 刷新界面
-    try{ MODELS = await jget('/api/models'); fillProviders(); onProviderChange(); buildChatOptions(); }catch(e){}
-    await loadKeyStatus();
-    try{ $('optPrompt').value = loadOptPrompt(); }catch(e){}
-    renderSettings(true);
-    set('导入完成：' + Object.keys(cfg).length + ' 个提供方 · '
-        + Object.keys(keys).length + ' 个 Key' + (prefsN ? ' · 优化提示词已恢复' : ''));
-  }catch(e){
-    set('导入失败：' + (e && e.message || e) + '（需要手机上 Termux 里的网关正在运行）', false);
-  }
-}
 
 /* ---------- 提供方显示名 / 控制台快捷链接 ---------- */
 // 内部 key 形如 custom178998995781, 没起名字时不要把它显示给用户
@@ -1803,6 +1748,7 @@ function openConsole(key){
   document.body.appendChild(a); a.click(); setTimeout(function(){ a.remove(); }, 400);
 }
 function consoleLink(key){
+  if(DEFAULT_KEYS.indexOf(key) < 0) return '';   // 只给内置提供方(byteplus/openai)显示快捷入口
   const url = provConsoleUrl(key);
   if (!url) return '';
   const p = (CONFIG && CONFIG[key]) || {};
