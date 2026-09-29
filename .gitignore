@@ -19,3 +19,8 @@ package-lock.json
 
 # CI 状态回写文件(由工作流生成)
 .ci/
+
+# --- PC 本地产物(不推送) ---
+dist/
+ui/
+tools/mock-log.jsonl

@@ -39,26 +39,83 @@
   function keyOf(p) { return K()[p] || ''; }
 
   // ---------- HTTP (CapacitorHttp 原生请求, 不受 CORS 限制) ----------
+  /** 给原生请求补齐「正常客户端」请求头。
+   *  背景: CapacitorHttp 走 Android HttpURLConnection, 默认 UA 是 Dalvik/2.1.0,
+   *  且不带 Accept —— 某些机房/出口 IP 的风控会因此对 POST 返回 403 (GET 却放行)。
+   *  这里把 UA 换成 WebView 的(即 Chrome on Android), 与浏览器/RikkaHub 同类。 */
+  function clientUA() {
+    try { const u = navigator && navigator.userAgent; if (u) return u; } catch (e) {}
+    return 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36';
+  }
+  function clientHeaders(h) {
+    const out = Object.assign({}, h || {});
+    if (!out['User-Agent'] && !out['user-agent']) {
+      const ua = clientUA();
+      out['User-Agent'] = ua;            // 直调插件时由此生效
+      out['x-cap-user-agent'] = ua;      // CapacitorHttp 官方 UA 通道(原生层改名 User-Agent 后删除)
+    }
+    if (!out['Accept'] && !out['accept']) out['Accept'] = '*/*';
+    return out;
+  }
+  /** WebView fetch 通道: 403 时的备用路。
+   *  注意: CapacitorHttp 开启时 window.fetch 已被补丁接管(仍走原生栈),
+   *  真正的 Chromium 网络栈要从隐藏 iframe 里取(桥接补丁只改顶层 window)。 */
+  let _realFetch = null;
+  function realFetch() {
+    if (_realFetch) return _realFetch;
+    try {
+      const f = document.createElement('iframe');
+      f.style.display = 'none';
+      (document.body || document.documentElement).appendChild(f);   // 常驻, 取下即失效
+      _realFetch = f.contentWindow.fetch.bind(f.contentWindow);
+    } catch (e) { _realFetch = null; }
+    return _realFetch || window.fetch.bind(window);
+  }
+  async function httpFetch(method, url, headers, data, timeoutMs) {
+    const h = Object.assign({}, headers || {});
+    delete h['x-cap-user-agent'];        // 此头是 CapacitorHttp 私有协议, 不能上线路由
+    delete h['User-Agent'];              // 浏览器禁止 JS 设置 UA, WebView 自带正确 UA
+    let body = data;
+    if (data != null && typeof data !== 'string' && !(typeof FormData !== 'undefined' && data instanceof FormData)) {
+      body = JSON.stringify(data);
+    }
+    if (typeof FormData !== 'undefined' && data instanceof FormData) {
+      delete h['Content-Type']; delete h['content-type'];   // boundary 由浏览器生成
+    }
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, timeoutMs || 300000) : null;
+    try {
+      const r = await realFetch()(url, { method: method, headers: h, body: body == null ? undefined : body, signal: ctrl ? ctrl.signal : undefined });
+      const txt = await r.text();
+      let j = txt; try { j = JSON.parse(txt); } catch (e) {}
+      return { status: r.status, data: j, raw: txt };
+    } finally { if (timer) clearTimeout(timer); }
+  }
   async function http(method, url, headers, data, timeoutMs) {
     const to = timeoutMs || 300000;
     const CH = PL('CapacitorHttp');
     if (CH) {
       const res = await CH.request({
-        method: method, url: url, headers: headers || {},
+        method: method, url: url, headers: clientHeaders(headers),
         data: data, connectTimeout: to, readTimeout: to,
       });
       let body = res.data;
       if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) {} }
-      return { status: res.status, data: body, raw: res.data };
+      const out = { status: res.status, data: body, raw: res.data, via: 'native' };
+      // 403 疑似传输层被风控(同 Key curl 可用时): 自动用 WebView fetch 重试一次
+      if (out.status === 403) {
+        try {
+          const alt = await httpFetch(method, url, headers, data, to);
+          if (alt.status && alt.status !== 403) { alt.via = 'fetch(原生403回退)'; return alt; }
+          out.fetchStatus = alt.status;
+        } catch (e) { out.fetchErr = String(e && e.message || e).slice(0, 120); }
+      }
+      return out;
     }
     // 兜底: 普通 fetch (APK 里一般用不到)
-    const r = await fetch(url, {
-      method: method, headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}),
-      body: data == null ? undefined : (typeof data === 'string' ? data : JSON.stringify(data)),
-    });
-    const txt = await r.text();
-    let j = txt; try { j = JSON.parse(txt); } catch (e) {}
-    return { status: r.status, data: j, raw: txt };
+    const r = await httpFetch(method, url, Object.assign({ 'Content-Type': 'application/json' }, headers || {}), data, to);
+    r.via = 'fetch';
+    return r;
   }
   async function httpJson(method, url, headers, data, timeoutMs) {
     const tries = [0, 1, 2];
@@ -139,13 +196,15 @@
       + hint403(last && last.status, base));
   }
 
-  /** 403: 同一 Key 能列模型却调不动某个模型时, 基本是 Key 的模型权限范围问题 */
+  /** 403: 同一 Key 能列模型却调不动某个模型时, 多为传输层指纹/出口 IP 被风控(curl 能用而 App 不能即属此类) */
   function hint403(status, base) {
     if (status !== 403) return '';
-    return '\n\n【403 说明】同一个 Key 能列出模型、却调用不了这个模型 —— 通常是这个 API Key 的「模型权限范围」'
-      + '没包含该模型（很多平台的 Key 可以只绑定部分模型）。\n'
-      + '请到控制台检查：该 API Key 是否限制了可用模型 / 是否已为该模型开通调用权限。\n'
-      + '也可以先用同平台另一个已确认能用的模型对比测试。';
+    return '\n\n【403 排查】同一个 Key 能列模型、curl 也能调该模型，唯独 App 被拒 —— '
+      + '最常见原因是 App 的「出口 IP / 请求指纹」被平台风控（旧版默认 Dalvik UA，本版已改为浏览器 UA 并支持 403 自动回退 WebView 通道，见上方「传输」行）。\n'
+      + '请依次试：\n'
+      + '① 若手机开着 FlClash 等代理：把本 App 的分流规则改成与 curl/RikkaHub 相同的节点（或暂时关代理，用同一 WiFi 直试）；\n'
+      + '② 升级到含本修复的 APK 后重新点「诊断」；\n'
+      + '③ 仍 403 再到平台控制台确认该 API Key 的「模型权限范围」包含此模型。';
   }
 
   async function optimize(body) {
@@ -250,15 +309,26 @@
 
   // ---------- 存图 ----------
   const DIR = 'DOCUMENTS';
-  let FILE_BASE = (function () { try { return localStorage.getItem('sw_n_filebase') || null; } catch (e) { return null; } })();
-  async function fileBase() {
-    if (FILE_BASE != null) return FILE_BASE;
+  // 只信任像 file:// 的缓存(旧版失败时缓存过空串/坏值, 会让预览永远裂图)
+  let FILE_BASE = (function () {
     try {
-      const r = await FS.getUri({ path: '', directory: DIR });
-      FILE_BASE = String(r.uri || '').replace(/\/+$/, '');
-      try { localStorage.setItem('sw_n_filebase', FILE_BASE); } catch (e) {}
-    } catch (e) { FILE_BASE = ''; }
-    return FILE_BASE;
+      const v = localStorage.getItem('sw_n_filebase') || null;
+      return (v && /^file:/i.test(v)) ? v : null;
+    } catch (e) { return null; }
+  })();
+  async function fileBase() {
+    if (FILE_BASE) return FILE_BASE;
+    try {
+      // 注意: 此处必须懒取 Filesystem 插件(不能在模块加载时取, 桥接可能未注入;
+      // 也不能用未定义的裸 FS —— 会 ReferenceError 使 FILE_BASE 永远为空, 预览全裂)
+      const r = await PL('Filesystem').getUri({ path: '', directory: DIR });
+      const u = String(r.uri || '').replace(/\/+$/, '');
+      if (u && /^file:/i.test(u)) {
+        FILE_BASE = u;
+        try { localStorage.setItem('sw_n_filebase', FILE_BASE); } catch (e) {}
+      }
+    } catch (e) { /* 不缓存失败结果, 下次调用重试 */ }
+    return FILE_BASE || '';
   }
   async function blobDims(blob) {
     try {
@@ -499,6 +569,8 @@
       const payload = { model: cm, messages: [{ role: 'user', content: 'hi' }] };
       const r2 = await httpJson('POST', base + '/chat/completions',
         { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, payload, 60000);
+      const viaLine = '   传输: ' + (r2.via || 'native') + (r2.fetchStatus ? ' · fetch 回退=' + r2.fetchStatus : '') + (r2.fetchErr ? ' · fetch 回退失败=' + r2.fetchErr : '');
+      lines.push(viaLine);
       if (r2.status === 200) {
         chatOk = true;
         lines.push('   结果: HTTP 200 · 可调用 ✅');
@@ -632,7 +704,7 @@
       if (P.indexOf('/api/history/') === 0 && method === 'DELETE') {
         const id = P.slice('/api/history/'.length);
         const h = hist(); const rec = h.filter(function (x) { return x.id === id; })[0];
-        if (rec) { for (const f of ((rec.output || {}).files || [])) { try { await FS.deleteFile({ path: f.file, directory: DIR }); } catch (e) {} } }
+        if (rec) { for (const f of ((rec.output || {}).files || [])) { try { await PL('Filesystem').deleteFile({ path: f.file, directory: DIR }); } catch (e) {} } }
         histSave(h.filter(function (x) { return x.id !== id; }));
         return { ok: true, deleted: rec ? 1 : 0 };
       }
