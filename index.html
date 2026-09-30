@@ -558,7 +558,8 @@ function applyTheme(){
   document.documentElement.setAttribute('data-theme', t);
   const b = document.getElementById('themeBtn');
   if(b){
-    b.innerHTML = icon(THEME_MODE==='system' ? 'auto' : (THEME_MODE==='dark' ? 'moon' : 'theme'));
+    const want = THEME_MODE==='system' ? 'auto' : (THEME_MODE==='dark' ? 'moon' : 'theme');
+    if(b.dataset.ic !== want){ b.innerHTML = icon(want); b.dataset.ic = want; }   // 幂等: 图标没变不重建, 避免闪动/位移
     b.title = '主题：' + ({system:'跟随系统', light:'浅色', dark:'深色'})[THEME_MODE];
     b.setAttribute('aria-label', b.title);
   }
@@ -757,7 +758,11 @@ function switchTab(name, fromNav){
     var lb=document.getElementById('lightbox'); if(lb) closeLightbox(true);
     var vw=document.getElementById('viewer'); if(vw) closeViewer(true);
     var mn=document.querySelector('.provmenu'); if(mn) closeProvMenu(true);
-    if(settingsView==='edit'){ settingsView='list'; editingProvider=null; }
+    if(settingsView==='edit'){
+      settingsView='list'; editingProvider=null;
+      var hd0=document.querySelector('header'); if(hd0) hd0.style.display='';   // 二级页会隐藏主顶栏, 直切时必须恢复(否则生图页顶栏消失)
+      document.querySelectorAll('body>.editbar').forEach(function(e){ e.remove(); });
+    }
     if(_navDepth>0){ var n=_navDepth; for(var i=0;i<n;i++) navConsume(); }   // 静默消费历史状态
   }
   var prev = CUR_TAB;
@@ -1661,6 +1666,7 @@ function renderSettings(skipAnim){
   _setViewMode = mode;
   const tok = ++_setAnimToken;
   if(hd) hd.style.display = isEdit ? 'none' : '';   // 顶栏先切好, 再播内容动画
+  if(!isEdit){ document.querySelectorAll('body>.editbar').forEach(function(e){ e.remove(); }); }   // 二级页顶栏只随二级页存在
   const nv = isEdit ? providerEditor(editingProvider) : providerListView();
   if(animate && tok === _setAnimToken){
     swapSettingsView(box, nv, mode==='edit');
@@ -1794,6 +1800,9 @@ function closeProvMenu(fromBack){
 }
 function providerEditor(key){
   const wrap=document.createElement('div');
+  // editbar 挂在 body 级: 绝不放进滑入动画容器 —— 祖先有 transform 时 position:fixed 会被劫持,
+  // 导致顶栏图标随动画位移/结束时跳位(用户反馈的卡顿)
+  document.querySelectorAll('body>.editbar').forEach(function(e){ e.remove(); });
   const bar=document.createElement('div'); bar.className='editbar';
   const back=document.createElement('button'); back.className='icon-btn'; back.title='返回提供方列表';
   back.innerHTML='<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>';
@@ -1801,7 +1810,7 @@ function providerEditor(key){
   const save=document.createElement('button'); save.className='btn primary'; save.innerHTML=icon('check')+'保存';
   save.onclick=function(){ saveProvider(key).catch(function(e){ toast('保存异常: '+(e&&e.message||e)); }); };
   bar.appendChild(back); bar.appendChild(save);
-  wrap.appendChild(bar);
+  document.body.appendChild(bar);
   const sp=document.createElement('div'); sp.className='editbar-spacer'; wrap.appendChild(sp);
   wrap.appendChild(providerCard(key));
   return wrap;
