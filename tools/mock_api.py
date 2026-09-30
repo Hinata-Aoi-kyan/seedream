@@ -101,6 +101,10 @@ class H(BaseHTTPRequestHandler):
         if p.endswith('/chat/completions') and self.command == 'POST':
             self._reply(CHAT_REPLY)
             return
+        # 生图: 返回 1x1 PNG b64, 用于通知/存图链路端到端验证
+        if p.endswith('/images/generations') and self.command == 'POST':
+            self._reply({"data": [{"b64_json": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="}]})
+            return
         self._reply({"echo": True, "path": self.path, "method": self.command})
 
     do_GET = _handle

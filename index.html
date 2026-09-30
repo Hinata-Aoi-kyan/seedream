@@ -1110,10 +1110,12 @@ function renderResults(box, d, ctx){ const total=Math.round((Date.now()-_g0)/100
     ops.append(a,ed); w.append(img,ops); box.appendChild(w); }); }
 function pollTask(taskId, box, btnAll){
   const iv=setInterval(async ()=>{ try{ const t=await jget('/api/task/'+taskId); const st=t._status;
-    if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t,_lastGenCtx); sysNotify('生成完成','已生成 '+(t.images||[]).length+' 张');
+    if(st==='done'){ clearInterval(iv); genTimerStop(); renderResults(box,t,_lastGenCtx);
+      if(!GW_IS_NATIVE) sysNotify('生成完成','已生成 '+(t.images||[]).length+' 张');   // APK 的通知由本地任务层发(带张数+尺寸, 信息更多), 避免双弹
       toast('生成成功'); clearDraft(); loadHistory(); btnAll.forEach(b=>b.disabled=false); }
     else if(st==='failed'){ clearInterval(iv); genTimerStop();
-      box.innerHTML='<div class="small-note">失败: '+esc(t.error||'未知错误')+'</div>'; sysNotify('生成失败',t.error||'未知错误');
+      box.innerHTML='<div class="small-note">失败: '+esc(t.error||'未知错误')+'</div>';
+      if(!GW_IS_NATIVE) sysNotify('生成失败',t.error||'未知错误');                    // 同上, APK 由本地任务层通知
       toast('生成失败'); btnAll.forEach(b=>b.disabled=false); } }catch(e){} }, 3000); }
 async function generate(){
   const userPrompt=$('prompt').value; if(!userPrompt.trim()){ toast('请输入提示词'); return; }
