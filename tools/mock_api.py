@@ -34,7 +34,7 @@ class H(BaseHTTPRequestHandler):
             # self.headers 保留到达顺序与原始大小写
             "headers": [[k, v] for k, v in self.headers.items()],
             "body_len": len(body),
-            "body": body[:400].decode('utf-8', 'replace') if body else '',
+            "body": body[:3000].decode('utf-8', 'replace') if body else '',
         }
         line = json.dumps(rec, ensure_ascii=False)
         with open(LOG, 'a', encoding='utf-8') as f:
@@ -66,6 +66,18 @@ class H(BaseHTTPRequestHandler):
             p = p[4:] or '/'
             if self.command == 'POST' and 'Origin' not in self.headers:
                 self._reply({"error": {"code": "Forbidden", "message": "you do not have access to the requested resource", "param": "", "type": "Forbidden"}}, status=403)
+                return
+        # /thka 模拟「不认 temperature」: 降级应去掉 temperature 但保留 thinking:disabled
+        if p.startswith('/thka'):
+            p = p[5:] or '/'
+            if b'temperature' in (body or b''):
+                self._reply({"error": {"code": "InvalidParameter", "message": "Invalid parameter: temperature", "type": "InvalidRequest"}}, status=400)
+                return
+        # /thkb 模拟「不认 thinking」: 错误明确提及 thinking 才允许去掉它重试
+        if p.startswith('/thkb'):
+            p = p[5:] or '/'
+            if b'thinking' in (body or b''):
+                self._reply({"error": {"code": "UnknownParameter", "message": "Unknown parameter: thinking", "type": "InvalidRequest"}}, status=400)
                 return
         if p == '/__dump':
             try:

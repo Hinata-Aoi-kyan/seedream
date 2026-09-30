@@ -165,15 +165,20 @@
     }
     if (!key) throw new Error('请先在设置里填写「' + prov + '」的 API Key');
 
-    // 逐级降级: 带 thinking+temperature -> 去 thinking -> 再去 temperature -> 最简 {model, messages}
+    // 逐级降级: thinking:disabled 是用户明确的提速诉求(提示词优化不需要思维链), 全程保留;
+    // 只有当错误信息明确指向 thinking 参数被拒时才去掉重试(与 gateway.py 策略一致)
+    const thinkingRejected = function (d) {
+      const t = String(JSON.stringify(d || {})).toLowerCase();
+      return t.indexOf('thinking') >= 0 || /unknown (field|parameter|argument)/.test(t) || t.indexOf('unrecognized') >= 0;
+    };
     const variants = [];
     const v1 = { model: body.__model, messages: body.messages };
     if (body.temperature != null) v1.temperature = body.temperature;
     if (body.__thinking !== false) v1.thinking = { type: 'disabled' };
     variants.push(v1);
-    if (v1.thinking) { const v = Object.assign({}, v1); delete v.thinking; variants.push(v); }
-    if (v1.temperature != null) { const v = Object.assign({}, v1); delete v.thinking; delete v.temperature; variants.push(v); }
+    if (v1.temperature != null) { const v = Object.assign({}, v1); delete v.temperature; variants.push(v); }
     variants.push({ model: body.__model, messages: body.messages });   // 最简: 排除一切参数因素
+    let noThinkingAdded = false;
 
     let last = null, tried = [];
     for (let i = 0; i < variants.length; i++) {
@@ -188,6 +193,11 @@
         throw new Error('模型返回为空（模型=' + body.__model + '）');
       }
       last = r;
+      // thinking 参数被明确拒绝时, 动态插入一个去掉 thinking 的变体再试
+      if (r.status === 400 && variants[i].thinking && !noThinkingAdded && thinkingRejected(r.data)) {
+        const v = Object.assign({}, variants[i]); delete v.thinking;
+        variants.splice(i + 1, 0, v); noThinkingAdded = true;
+      }
       // 只在 4xx(参数/权限类) 时继续降级; 5xx/网络错直接停下重试没意义
       if (r.status < 400 || r.status >= 500) break;
     }
