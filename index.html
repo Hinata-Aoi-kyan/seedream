@@ -214,6 +214,9 @@
         animation:swSlideIn .26s cubic-bezier(.22,.61,.36,1)}
   .provlayer.closing{animation:swSlideOut .22s cubic-bezier(.22,.61,.36,1) forwards}
   .provlayer-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px calc(24px + var(--sab))}
+  /* 全屏编辑系统提示词: textarea 撑满 */
+  #peditLayer .provlayer-body{display:flex;flex-direction:column;padding:12px 14px calc(12px + var(--sab))}
+  #peditLayer textarea{flex:1;min-height:0;font-size:14px;line-height:1.7;resize:none}
   .editbar{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:10px;
         background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
         border-bottom:1px solid var(--line);box-sizing:border-box;
@@ -399,7 +402,10 @@
               </div>
               <label class="switch"><input type="checkbox" id="noThinking" checked><span class="slider"></span></label>
             </div>
-            <label>优化系统提示词（可编辑）</label>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+              <label style="margin:0">优化系统提示词（可编辑）</label>
+              <button class="btn small" type="button" onclick="openPromptEditor()" data-icon="expand">全屏编辑</button>
+            </div>
             <textarea id="optPrompt" style="min-height:100px"></textarea>
             <div style="text-align:right;min-height:16px;margin-top:4px">
               <span id="optSaveState" style="font-size:12px;color:var(--acc2);opacity:0;transition:opacity .2s">已保存</span>
@@ -511,6 +517,7 @@ const ICONS = {
   link:'<svg viewBox="0 0 24 24"><path d="M10 13.5a4.5 4.5 0 0 0 6.4 0l2.6-2.6a4.5 4.5 0 0 0-6.4-6.4l-1.3 1.3"/><path d="M14 10.5a4.5 4.5 0 0 0-6.4 0l-2.6 2.6a4.5 4.5 0 0 0 6.4 6.4l1.3-1.3"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
   history:'<svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6l-2.5 2.5"/><path d="M3.5 8.5V4.5M3.5 8.5h4"/><path d="M12 7.5v4.5l3 1.8"/></svg>',
+  expand:'<svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>',
   x:'<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>'
 };
 function icon(name){ return ICONS[name] || ''; }
@@ -736,6 +743,7 @@ function closeTopmost(){
   var ov=document.getElementById('editor'); if(ov){ closeImageEditor(true); return true; }
   var lb=document.getElementById('lightbox'); if(lb){ closeLightbox(true); return true; }
   var v=document.getElementById('viewer'); if(v){ closeViewer(true); return true; }
+  var pl=document.getElementById('peditLayer'); if(pl){ closePromptEditor(true); return true; }
   var m=document.querySelector('.provmenu'); if(m){ closeProvMenu(true); return true; }
   if(CUR_TAB==='settings' && settingsView==='edit'){ settingsView='list'; editingProvider=null; renderSettings(); return true; }
   if(CUR_TAB!=='generate'){ switchTab('generate', true); return true; }
@@ -753,6 +761,7 @@ function switchTab(name, fromNav){
     var ov=document.getElementById('editor'); if(ov) closeImageEditor(true);
     var lb=document.getElementById('lightbox'); if(lb) closeLightbox(true);
     var vw=document.getElementById('viewer'); if(vw) closeViewer(true);
+    var pe=document.getElementById('peditLayer'); if(pe) closePromptEditor(true);
     var mn=document.querySelector('.provmenu'); if(mn) closeProvMenu(true);
     if(settingsView==='edit'){
       settingsView='list'; editingProvider=null;
@@ -889,6 +898,50 @@ function saveOptPromptDebounced(){ clearTimeout(window._optpt);
   window._optpt=setTimeout(async ()=>{ try{ await jput('/api/prefs',{opt_prompt:$('optPrompt').value}); showSaved(); }catch(e){} },600); } // 本地按optStorageKey已存, 服务端仅存当前值
 function showSaved(){ const el=document.getElementById('optSaveState'); if(!el) return; el.style.opacity='1';
   clearTimeout(window._savedT); window._savedT=setTimeout(()=>{ el.style.opacity='0'; },1600); }
+/* ---------- 系统提示词全屏编辑层 ---------- */
+// 内容实时回写主输入框并走原有自动保存; 「保存」= 立即落盘并给反馈, 返回键/返回按钮关闭(内容不丢)
+function openPromptEditor(){
+  if(document.getElementById('peditLayer')) return;
+  const layer=document.createElement('div'); layer.id='peditLayer'; layer.className='provlayer';
+  const bar=document.createElement('div'); bar.className='editbar';
+  const back=document.createElement('button'); back.className='icon-btn'; back.title='返回';
+  back.innerHTML='<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>';
+  back.onclick=function(){ navBack(); };
+  const save=document.createElement('button'); save.className='btn primary'; save.id='peditSave'; save.innerHTML=icon('check')+'保存';
+  save.onclick=async function(){
+    const b=document.getElementById('peditSave'); if(b) { b.disabled=true; b.innerHTML='<span class="loader"></span>保存中'; }
+    try{ await flushOptPrompt(); toast('系统提示词已保存'); }
+    catch(e){ toast('保存失败: '+(e&&e.message||e)); }
+    finally{ navBack(); }
+  };
+  bar.append(back, save);
+  const body=document.createElement('div'); body.className='provlayer-body';
+  const ta=document.createElement('textarea'); ta.id='peditText'; ta.placeholder='输入优化系统提示词…';
+  ta.value=$('optPrompt').value;
+  ta.addEventListener('input', function(){
+    const main=$('optPrompt'); main.value=ta.value;
+    if(main.oninput) main.oninput();          // 走原有保存链(localStorage + 防抖网关)
+  });
+  body.appendChild(ta);
+  layer.append(bar, body);
+  document.body.appendChild(layer);
+  navPush();
+  setTimeout(function(){ ta.focus(); }, 250);  // 滑入动画结束后聚焦, 避免键盘顶起动画
+}
+function closePromptEditor(fromBack){
+  var l=document.getElementById('peditLayer'); if(!l) return;
+  if(fromBack !== true){ navBack(); return; }
+  l.classList.add('closing');
+  setTimeout(function(){ if(l.parentNode) l.remove(); }, 230);
+}
+/** 立即保存系统提示词(清掉防抖, 直接落服务端+本地) */
+async function flushOptPrompt(){
+  clearTimeout(window._optpt);
+  const v=$('optPrompt').value;
+  try{ localStorage.setItem(optStorageKey(), v); }catch(e){}
+  await jput('/api/prefs',{opt_prompt:v});
+  showSaved();
+}
 
 /* ---------- 模型选项(按 provider 动态) ---------- */
 function renderModelOptions(){
