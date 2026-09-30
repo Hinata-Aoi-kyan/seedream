@@ -217,6 +217,14 @@
   /* 全屏编辑系统提示词: textarea 撑满 */
   #peditLayer .provlayer-body{display:flex;flex-direction:column;padding:12px 14px calc(12px + var(--sab))}
   #peditLayer textarea{flex:1;min-height:0;font-size:14px;line-height:1.7;resize:none}
+  /* 输入框右上角的「全屏编辑」纯图标按钮(无边框无文字无背景) */
+  .pedit-wrap{position:relative;display:block}
+  .pedit-wrap textarea{display:block;resize:vertical}
+  .expand-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;border:none;background:none;color:var(--mut);
+        cursor:pointer;border-radius:7px;display:flex;align-items:center;justify-content:center;padding:0;
+        transition:color .15s,background .15s}
+  .expand-btn:hover{color:var(--acc);background:color-mix(in srgb,var(--acc) 10%,transparent)}
+  .expand-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .editbar{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:10px;
         background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
         border-bottom:1px solid var(--line);box-sizing:border-box;
@@ -402,11 +410,11 @@
               </div>
               <label class="switch"><input type="checkbox" id="noThinking" checked><span class="slider"></span></label>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
-              <label style="margin:0">优化系统提示词（可编辑）</label>
-              <button class="btn small" type="button" onclick="openPromptEditor()" data-icon="expand">全屏编辑</button>
+            <label style="margin-top:10px">优化系统提示词（可编辑）</label>
+            <div class="pedit-wrap">
+              <textarea id="optPrompt" style="min-height:100px"></textarea>
+              <button class="expand-btn" type="button" onclick="openPromptEditor()" data-icon="expand" title="全屏编辑" aria-label="全屏编辑"></button>
             </div>
-            <textarea id="optPrompt" style="min-height:100px"></textarea>
             <div style="text-align:right;min-height:16px;margin-top:4px">
               <span id="optSaveState" style="font-size:12px;color:var(--acc2);opacity:0;transition:opacity .2s">已保存</span>
             </div>
